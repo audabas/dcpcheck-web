@@ -1,0 +1,19 @@
+services:
+  dcpcheck:
+    build: .
+    image: dcpcheck-web:latest
+    container_name: dcpcheck
+    ports:
+      - "8080:8080"
+    volumes:
+      # The folder holding your DCPs. Read-only: dcpcheck never writes there.
+      - /volume1/DCP:/dcp:ro
+      # Results, logs and HTML reports.
+      - ./data:/data
+    environment:
+      # Optional: run as your NAS user (see README).
+      # - PUID=1026
+      # - PGID=100
+      # Optional: extra options passed to dcpomatic2_verify_cli.
+      # - VERIFY_ARGS=--no-asset-hash-check
+    restart: unless-stopped

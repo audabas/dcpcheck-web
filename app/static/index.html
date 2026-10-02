@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>dcpcheck — DCP verification</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <svg width="34" height="34" viewBox="0 0 34 34" fill="none" stroke="#E8A33D" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="28" height="24" rx="3"></rect><path d="M8 5v24M26 5v24"></path><path d="M4.5 10h2M4.5 15h2M4.5 20h2M4.5 25h2M27.5 10h2M27.5 15h2M27.5 20h2M27.5 25h2"></path><path d="M12.5 17.5l3 3 6-7"></path></svg>
+      <div class="brand-name"><b>dcpcheck</b><span>DCP verification</span></div>
+    </div>
+    <div class="top-tools">
+      <span class="pill">Directory <span class="mono" id="root">…</span></span>
+      <span class="muted" style="font-size: 13px" id="scanned" aria-live="polite"></span>
+      <button class="btn btn-sec" id="rescan" type="button">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9"></path><path d="M13.5 2.5v3h-3"></path></svg>
+        Rescan directory
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="list" aria-labelledby="list-title">
+      <div class="section-head">
+        <h2 class="eyebrow" id="list-title">Folders</h2>
+        <span class="muted" style="font-size: 13px" id="count"></span>
+      </div>
+      <div id="rows" style="display: flex; flex-direction: column; gap: 12px"></div>
+    </section>
+
+    <section class="detail" id="detail" aria-label="Selected folder"></section>
+  </main>
+
+  <footer class="credits">
+    <p>Verification is done by <a href="https://dcpomatic.com/" target="_blank" rel="noopener">DCP-o-matic</a><span id="version"></span>, the free and open-source DCP toolkit written by Carl Hetherington and its contributors. dcpcheck is only an unofficial web front end to its verifier. If DCP-o-matic is useful to you, please consider <a href="https://dcpomatic.com/donate" target="_blank" rel="noopener">donating to the project</a>.</p>
+    <p><a href="https://github.com/audabas/dcpcheck-web" target="_blank" rel="noopener">dcpcheck-web</a></p>
+  </footer>
+</div>
+<script src="/static/app.js"></script>
+</body>
+</html>

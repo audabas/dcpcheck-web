@@ -1,0 +1,10 @@
+.git
+.github
+data
+dev
+tests
+sample-dcps
+**/__pycache__
+*.md
+!deb/*.md
+docs

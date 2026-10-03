@@ -42,6 +42,30 @@ class Scanner(unittest.TestCase):
         self.assertEqual(by_name["Festival2026"]["duration"], "45s")
         self.assertEqual(by_name["Festival2026"]["kind"], "Advertisement")
 
+    def test_expected_size(self):
+        d = next(d for d in scanner.find_dcps(self.tmp.name) if d.name.startswith("Festival"))
+        mxfs = sum(os.path.getsize(os.path.join(d.path, n)) for n in ("j2c_video.mxf", "pcm_audio.mxf", "cpl.xml"))
+        self.assertEqual(scanner.expected_size(d.path), mxfs)
+
+    def test_expected_size_needs_a_whole_pkl(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(scanner.expected_size(tmp))
+            with open(os.path.join(tmp, "pkl.xml"), "w") as f:
+                f.write('<PackingList xmlns="http://www.smpte-ra.org/schemas/429-8/2007/PKL"><AssetList><Asset><Size>12')
+            self.assertIsNone(scanner.expected_size(tmp))
+
+    def test_written_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "a.mxf"), "wb") as f:
+                f.write(b"x" * 100_000)
+            # Given its final size but not written yet, as Windows does over SMB.
+            with open(os.path.join(tmp, "b.mxf"), "wb") as f:
+                f.truncate(10_000_000)
+            size, written, _ = scanner.measure(tmp)
+            self.assertEqual(size, 10_100_000)
+            if os.stat(os.path.join(tmp, "a.mxf")).st_blocks:
+                self.assertEqual(written, 100_000)
+
     def test_sound_from_name(self):
         self.assertEqual(scanner.sound_from_name("Film_FTR_F_FR-XX_FR_71-HI_2K_X"), "7.1")
         self.assertIsNone(scanner.sound_from_name("whatever"))

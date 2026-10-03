@@ -32,6 +32,8 @@ class Config:
     max_parallel: int
     scan_depth: int
     scan_interval: int
+    copy_quiet: int
+    copy_poll: float
     host: str
     port: int
     verifier_version: str
@@ -55,6 +57,8 @@ class Config:
             max_parallel=int(e("MAX_PARALLEL", "1")),
             scan_depth=int(e("SCAN_DEPTH", "3")),
             scan_interval=int(e("SCAN_INTERVAL", "300")),
+            copy_quiet=int(e("COPY_QUIET", "20")),
+            copy_poll=float(e("COPY_POLL", "3")),
             host=e("HOST", "0.0.0.0"),
             port=int(e("PORT", "8080")),
             verifier_version=version,
@@ -141,6 +145,8 @@ class Handler(BaseHTTPRequestHandler):
         r = ROUTE.match(path)
         if r and r.group(2) in ("verify", "cancel"):
             dcp_id, action = r.groups()
+            if action == "verify" and m.is_copying(dcp_id):
+                return self.send_json({"ok": False, "error": "The DCP is still being copied."}, HTTPStatus.CONFLICT)
             ok = m.verify(dcp_id) if action == "verify" else m.cancel(dcp_id)
             return self.send_json({"ok": ok}, HTTPStatus.OK if ok else HTTPStatus.NOT_FOUND)
         self.send_error(HTTPStatus.NOT_FOUND)

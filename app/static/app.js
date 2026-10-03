@@ -1,14 +1,25 @@
 'use strict';
 
 const STATUS = {
-  ok: { label: 'Passed' },
-  warn: { label: 'Warnings' },
-  bv21: { label: 'Bv2.1 issues' },
+  ok: { label: 'OK' },
+  warn: { label: 'OK' },
+  bv21: { label: 'OK' },
   error: { label: 'Errors' },
   failed: { label: 'Verifier failed' },
   never: { label: 'Never verified' },
   running: { label: 'Running' },
-  queued: { label: 'Queued' }
+  queued: { label: 'Queued' },
+  copying: { label: 'Copying' }
+};
+// Without errors a DCP is OK; its Bv2.1 issues and warnings only show as flags.
+const PASSED = { ok: 1, bv21: 1, warn: 1 };
+// For sorting by status, problems first.
+const STATUS_RANK = ['copying', 'running', 'queued', 'failed', 'error', 'never', 'bv21', 'warn', 'ok'];
+const SORTS = {
+  name: { label: 'Name', order: ['A → Z', 'Z → A'] },
+  size: { label: 'Size', order: ['Largest first', 'Smallest first'] },
+  status: { label: 'Status', order: ['Problems first', 'OK first'] },
+  date: { label: 'Last updated', order: ['Newest first', 'Oldest first'] }
 };
 const SEV = {
   error: { label: 'Error', title: 'The DCP is broken or may not play' },
@@ -23,6 +34,8 @@ const ui = {
   selected: load('selected'),
   filter: 'all',
   showAll: false,
+  sort: SORTS[load('sort')] ? load('sort') : 'name',
+  reverse: load('reverse') === '1',
   detail: null,      // full detail (with notes) of the selected DCP
   detailKey: null,   // what that detail was fetched for
   clockSkew: 0
@@ -66,8 +79,13 @@ function ago(ts) {
   return 'on ' + fmtDate(ts);
 }
 
+function fmtSpeed(b) {
+  return b == null ? 'Measuring…' : fmtSize(b).replace('—', '0 B') + '/s';
+}
+
 function statusOf(d) {
   if (d.job) return d.job.state === 'running' ? 'running' : 'queued';
+  if (d.copy) return 'copying';
   return d.result ? d.result.status : 'never';
 }
 function statusLabel(d) {
@@ -75,6 +93,32 @@ function statusLabel(d) {
   if (st === 'running') return 'Running · ' + Math.floor(d.job.progress) + '%';
   if (st === 'queued') return 'Queued' + (d.queue_position ? ' · #' + d.queue_position : '');
   return STATUS[st].label;
+}
+function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
+function flagsHtml(d) {
+  const c = (d.result && d.result.counts) || {};
+  let html = '';
+  if (c.bv21) html += `<span class="flag bv21" title="${esc(plural(c.bv21, 'Bv2.1 issue', 'Bv2.1 issues'))}">${c.bv21} Bv2.1</span>`;
+  if (c.warn) html += `<span class="flag warn" title="${esc(plural(c.warn, 'warning', 'warnings'))}">${c.warn} warn.</span>`;
+  return html;
+}
+function statusHtml(d) {
+  const st = statusOf(d);
+  const cls = PASSED[st] ? 'ok' : st;
+  const live = st === 'running' || st === 'copying';
+  return `<span class="status c-${cls}"><span class="dot${live ? ' pulse' : ''}"></span>${esc(statusLabel(d))}</span>${PASSED[st] ? flagsHtml(d) : ''}`;
+}
+
+function sortedDcps(list) {
+  const name = (a, b) => a.relpath.localeCompare(b.relpath, undefined, { numeric: true, sensitivity: 'base' });
+  const by = {
+    name: name,
+    size: (a, b) => b.size - a.size,
+    status: (a, b) => STATUS_RANK.indexOf(statusOf(a)) - STATUS_RANK.indexOf(statusOf(b)),
+    date: (a, b) => b.mtime - a.mtime
+  }[ui.sort];
+  const dir = ui.reverse ? -1 : 1;
+  return list.slice().sort((a, b) => dir * by(a, b) || name(a, b));
 }
 
 async function api(path, method) {
@@ -94,6 +138,10 @@ function renderHeader(s) {
   document.getElementById('rescan').disabled = !!s.scanning;
 }
 
+function rowClass(d) {
+  return 'row' + (d.id === ui.selected ? ' selected' : '');
+}
+
 function rowHtml(d) {
   const st = statusOf(d);
   const sel = d.id === ui.selected;
@@ -102,18 +150,23 @@ function rowHtml(d) {
   let line;
   if (running) line = 'Verification in progress';
   else if (st === 'queued') line = 'Waiting for the current verification';
-  else if (d.result) line = 'Verified ' + fmtDate(d.result.finished_at);
-  else line = 'Added ' + fmtDay(d.mtime);
-  const action = busy ? (running ? 'Running' : 'Queued') : (d.result ? 'Re-run' : 'Verify');
-  const aria = (d.result ? 'Re-run verification of ' : 'Verify ') + d.name;
-  return `<div class="row${sel ? ' selected' : ''}">
-<button class="row-main" type="button" data-select="${esc(d.id)}" data-key="sel-${esc(d.id)}" aria-pressed="${sel}">
+  else if (st === 'copying') line = 'Still arriving on the disk';
+  else if (d.result && ui.sort !== 'date') line = 'Verified ' + fmtDate(d.result.finished_at);
+  else line = 'Updated ' + fmtDate(d.mtime);
+  let side;
+  if (st === 'copying') {
+    side = `<span class="copying" title="Copy in progress: the folder is still growing">${ICON_SPIN}<span class="mono">${esc(fmtSpeed(d.copy.speed))}</span></span>`;
+  } else {
+    const action = busy ? (running ? 'Running' : 'Queued') : (d.result ? 'Re-run' : 'Verify');
+    const aria = (d.result ? 'Re-run verification of ' : 'Verify ') + d.name;
+    side = `<button class="btn btn-sec" type="button" data-verify="${esc(d.id)}" data-key="verify-${esc(d.id)}" aria-label="${esc(aria)}"${busy ? ' disabled' : ''}>${action}</button>`;
+  }
+  return `<button class="row-main" type="button" data-select="${esc(d.id)}" data-key="sel-${esc(d.id)}" aria-pressed="${sel}">
 <span class="row-name">${esc(d.relpath)}</span>
-<span class="row-meta"><span class="status c-${st}"><span class="dot${running ? ' pulse' : ''}"></span>${esc(statusLabel(d))}</span><span>${esc(line)}</span><span>${esc(fmtSize(d.size))}</span></span>
+<span class="row-meta"><span class="row-status">${statusHtml(d)}</span><span>${esc(line)}</span><span>${esc(fmtSize(d.size))}</span></span>
 ${running ? `<span class="bar"><span class="bar-live" style="width:${Math.floor(d.job.progress)}%"></span></span>` : ''}
 </button>
-<div class="row-side"><button class="btn btn-sec" type="button" data-verify="${esc(d.id)}" data-key="verify-${esc(d.id)}" aria-label="${esc(aria)}"${busy ? ' disabled' : ''}>${action}</button></div>
-</div>`;
+<div class="row-side">${side}</div>`;
 }
 
 function emptyListHtml(s) {
@@ -121,6 +174,7 @@ function emptyListHtml(s) {
   return `<div class="empty-list"><b>No DCP found</b>dcpcheck looks for folders containing an ASSETMAP or ASSETMAP.xml file in <span class="mono">${esc(s.root)}</span> and its sub-folders. Check the volume mounted on the container, then rescan.</div>`;
 }
 
+const ICON_SPIN = '<svg class="spin" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6" opacity=".25"></circle><path d="M14 8a6 6 0 0 0-6-6"></path></svg>';
 const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.8v10.4a.6.6 0 0 0 .9.5l8.4-5.2a.6.6 0 0 0 0-1L3.9 1.3a.6.6 0 0 0-.9.5z"></path></svg>';
 const ICON_OK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#74D3AE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
 const ICON_BAD = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF8A7A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M12 7v6M12 16.5v.2"></path></svg>';
@@ -150,9 +204,11 @@ ${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span
   html += `<div class="card verif"><div class="verif-head">
 <div style="display: flex; flex-direction: column; gap: 4px">
 <h3>Verification</h3>
-<span class="status c-${st}"><span class="dot${running ? ' pulse' : ''}"></span>${esc(statusLabel(d))}</span>
+<span class="verif-status">${statusHtml(d)}</span>
 </div><div class="verif-actions">`;
-  if (d.job) {
+  if (st === 'copying') {
+    // No action while the DCP is still arriving.
+  } else if (d.job) {
     html += `<button class="btn btn-sec" type="button" data-cancel="${esc(d.id)}" data-key="cancel">${queued ? 'Remove from queue' : 'Cancel'}</button>`;
   } else {
     html += `<button class="btn btn-pri" type="button" data-verify="${esc(d.id)}" data-key="run">${ICON_PLAY}${res ? 'Re-run verification' : 'Run verification'}</button>`;
@@ -166,11 +222,17 @@ ${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span
 <div class="bar big" role="progressbar" aria-label="Progress of the current step" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span class="bar-live" style="width:${pct}%"></span></div>
 <span class="hint">Running for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.job.started_at))}. Every MXF file is read in full to check its hash, so a feature can take a while on a NAS. <a href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Live output</a></span>
 </div>`;
+  } else if (st === 'copying') {
+    html += `<div class="running">
+<div class="running-line"><span class="running-stage">This folder is still being copied</span><span class="mono c-copying">${esc(fmtSpeed(d.copy.speed))}</span></div>
+<div class="bar big"><span class="bar-live bar-copy" style="width:100%"></span></div>
+<span class="hint">${esc(fmtSize(d.size))} so far, growing for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.copy.since))}. The verification can start once the folder stops growing.</span>
+</div>`;
   } else if (queued) {
     html += `<div class="running"><span class="running-stage">Waiting in the queue${d.queue_position ? ' (position ' + d.queue_position + ')' : ''}.</span><span class="hint">Verifications run one after the other so that they don't fight over the disks.</span></div>`;
   }
 
-  if (!res && !d.job) {
+  if (!res && !d.job && st !== 'copying') {
     html += `<div class="never">${ICON_NEVER}<b>This folder has never been verified</b><span>Run a verification to check the DCP’s structure, its file hashes and its compliance with the Bv2.1 recommendations.</span></div>`;
   }
 
@@ -193,6 +255,9 @@ function resultHtml(d, res) {
       `<div class="count"><b class="${c[k] ? 'c-' + k : ''}">${c[k] || 0}</b><span>${label}</span></div>`).join('') + '</div>';
     if (res.status === 'ok') {
       html += `<div class="banner ok">${ICON_OK}<div><b>No issues found</b><span>DCP-o-matic found nothing wrong with this DCP.</span></div></div>`;
+    } else if (PASSED[res.status]) {
+      const found = [c.bv21 ? plural(c.bv21, 'Bv2.1 issue', 'Bv2.1 issues') : '', c.warn ? plural(c.warn, 'warning', 'warnings') : ''].filter(Boolean).join(' and ');
+      html += `<div class="banner ok">${ICON_OK}<div><b>OK: no errors</b><span>DCP-o-matic found no error in this DCP, only ${esc(found)}, listed below. They are worth a look but should not stop it from playing.</span></div></div>`;
     }
   }
 
@@ -222,24 +287,68 @@ function resultHtml(d, res) {
   return html + '</div>';
 }
 
+// Refocusing must never scroll: the page is redrawn every second while a
+// verification runs, and the user may be reading something else.
+function refocus(el) {
+  if (el && el.isConnected && !el.disabled && document.activeElement !== el) el.focus({ preventScroll: true });
+}
+
 function setHtml(el, html) {
   if (el._html === html) return;
   const active = document.activeElement;
   const key = active && el.contains(active) ? active.getAttribute('data-key') : null;
   el.innerHTML = html;
   el._html = html;
-  if (key) {
-    const again = el.querySelector('[data-key="' + CSS.escape(key) + '"]');
-    if (again && !again.disabled) again.focus();
+  if (key) refocus(el.querySelector('[data-key="' + CSS.escape(key) + '"]'));
+}
+
+// Rows are kept and updated one by one, so that a refresh only touches the
+// rows that changed and leaves the scroll position alone.
+function renderRows(s) {
+  const box = document.getElementById('rows');
+  if (!s.dcps.length) {
+    box._rows = null;
+    setHtml(box, emptyListHtml(s));
+    return;
   }
+  if (!box._rows) {
+    box.textContent = '';
+    box._html = null;
+    box._rows = new Map();
+  }
+  const active = document.activeElement;
+  const seen = new Set();
+  sortedDcps(s.dcps).forEach((d, i) => {
+    let el = box._rows.get(d.id);
+    if (!el) {
+      el = document.createElement('div');
+      box._rows.set(d.id, el);
+    }
+    seen.add(d.id);
+    const cls = rowClass(d);
+    if (el.className !== cls) el.className = cls;
+    setHtml(el, rowHtml(d));
+    if (box.children[i] !== el) box.insertBefore(el, box.children[i] || null);
+  });
+  for (const [id, el] of box._rows) {
+    if (!seen.has(id)) { el.remove(); box._rows.delete(id); }
+  }
+  if (active && box.contains(active)) refocus(active);
+}
+
+function renderSort() {
+  const sel = document.getElementById('sort');
+  if (sel.value !== ui.sort) sel.value = ui.sort;
+  document.getElementById('sort-dir').textContent = SORTS[ui.sort].order[ui.reverse ? 1 : 0];
 }
 
 function render() {
   const s = ui.state;
   if (!s) return;
   renderHeader(s);
-  if (!s.dcps.some(d => d.id === ui.selected)) ui.selected = s.dcps.length ? s.dcps[0].id : null;
-  setHtml(document.getElementById('rows'), s.dcps.length ? s.dcps.map(rowHtml).join('') : emptyListHtml(s));
+  renderSort();
+  if (!s.dcps.some(d => d.id === ui.selected)) ui.selected = s.dcps.length ? sortedDcps(s.dcps)[0].id : null;
+  renderRows(s);
   const sel = s.dcps.find(d => d.id === ui.selected);
   setHtml(document.getElementById('detail'), sel ? detailHtml(sel) : '');
   if (sel) ensureDetail(sel);
@@ -268,7 +377,7 @@ async function refresh() {
     const s = await api('/api/state');
     ui.clockSkew = Date.now() / 1000 - s.now;
     ui.state = s;
-    busy = s.scanning || s.dcps.some(d => d.job);
+    busy = s.scanning || s.dcps.some(d => d.job || d.copy);
     render();
   } catch (e) {
     document.getElementById('scanned').textContent = 'Server unreachable, retrying…';
@@ -311,6 +420,19 @@ document.addEventListener('click', async ev => {
     ui.showAll = true;
     render();
   }
+});
+
+document.getElementById('sort').addEventListener('change', ev => {
+  ui.sort = SORTS[ev.target.value] ? ev.target.value : 'name';
+  ui.reverse = false;
+  save('sort', ui.sort);
+  save('reverse', '0');
+  render();
+});
+document.getElementById('sort-dir').addEventListener('click', () => {
+  ui.reverse = !ui.reverse;
+  save('reverse', ui.reverse ? '1' : '0');
+  render();
 });
 
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });

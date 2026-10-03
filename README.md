@@ -66,6 +66,7 @@ If this project is useful to you, DCP-o-matic is what you should thank:
 - Notices DCPs that are still being copied to the disk: while a folder keeps
   growing, it shows the copy's progress and speed instead of the Verify
   button, then verifies the DCP by itself once the copy is complete.
+- Verifies new DCPs by itself as soon as a scan finds them.
 - Marks a DCP without errors as **OK**, with small flags for its Bv2.1
   issues and warnings.
 - Sorts the notes into **Errors**, **Bv2.1 issues** and **Warnings**, with
@@ -140,7 +141,7 @@ Environment variables of the container:
 | `MAX_PARALLEL`   | `1`                     | Number of verifications run at the same time. |
 | `COPY_QUIET`     | `20`                    | Seconds without any change after which a folder being copied is considered complete. |
 | `COPY_POLL`      | `3`                     | Seconds between two measures of a folder being copied (for its speed). |
-| `AUTO_VERIFY`    | `1`                     | Verify a DCP by itself when its copy is complete. Set to `0` to turn it off. |
+| `AUTO_VERIFY`    | `1`                     | Verify new DCPs, and DCPs whose copy is complete, by itself. Set to `0` to turn it off. |
 | `VERIFY_ARGS`    | *(empty)*               | Extra options for `dcpomatic2_verify_cli`, e.g. `--no-asset-hash-check`. Run `docker exec dcpcheck dcpomatic2_verify_cli --help` for the list. |
 | `HTML_REPORT`    | `1`                     | Ask the verifier for its HTML report (`-o`). Set to `0` to turn it off. |
 | `PUID` / `PGID`  | *(empty: root)*         | Run as this user/group. |
@@ -206,6 +207,12 @@ data arriving and the PKL says that everything is there. A copy that stopped
 half-way, or a folder whose files only got new dates (after a change of
 permissions, say), is left alone. A new DCP only appears at the next scan:
 press *Rescan directory* to see it at once.
+
+A DCP that a scan finds for the first time is verified by itself too (or
+when its copy is complete, if it is still arriving). The DCPs already there
+when dcpcheck first starts are not: verify them by hand. dcpcheck keeps the
+list of the DCPs it has seen in `/data/known.json` and never forgets one, so
+a share that was unmounted for a while doesn't get verified again in full.
 
 When a verification ends without any note and with a non-zero exit code,
 dcpcheck shows it as *Verifier failed*. The raw output, a click away,

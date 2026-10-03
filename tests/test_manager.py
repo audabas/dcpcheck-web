@@ -103,7 +103,7 @@ class Copies(unittest.TestCase):
         self.grow(1_000_000)
         self.finish(m, d)
         self.assertIn(d.id, m.jobs)
-        self.assertTrue(m.jobs[d.id].auto)
+        self.assertEqual(m.jobs[d.id].auto, "copy")
         self.assertTrue(m.state()["dcps"][0]["job"]["auto"])
 
     def test_interrupted_copy_is_not_verified(self):
@@ -141,6 +141,74 @@ class Copies(unittest.TestCase):
         os.remove(os.path.join(self.dcp, "ASSETMAP.xml"))
         m.rescan()
         self.assertEqual(m.copies, {})
+
+
+
+class NewDcps(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self.tmp.name, "dcp")
+        self.data = os.path.join(self.tmp.name, "data")
+        os.makedirs(self.root)
+        self.add("Old_FTR_2K_SMPTE_OV")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def add(self, name):
+        path = os.path.join(self.root, name)
+        os.makedirs(path)
+        with open(os.path.join(path, "ASSETMAP.xml"), "w") as f:
+            f.write("<AssetMap/>")
+        time.sleep(0.15)  # older than the quiet period: not a copy in progress
+
+    def manager(self, auto=True):
+        cfg = config(self.root, self.data, 0.1)
+        cfg.auto_verify = auto
+        m = Manager(cfg)
+        m.rescan()
+        return m
+
+    def auto_jobs(self, m):
+        return sorted(j.dcp.name for j in m.jobs.values() if j.auto == "new")
+
+    def test_first_start_verifies_nothing(self):
+        m = self.manager()
+        self.assertEqual(m.jobs, {})
+
+    def test_new_dcp_is_verified(self):
+        m = self.manager()
+        self.add("New_TLR_2K_SMPTE_OV")
+        m.rescan()
+        self.assertEqual(self.auto_jobs(m), ["New_TLR_2K_SMPTE_OV"])
+        m.rescan()
+        self.assertEqual(len(m.jobs), 1)
+
+    def test_dcp_added_while_stopped_is_verified(self):
+        self.manager()
+        self.add("New_TLR_2K_SMPTE_OV")
+        m = self.manager()
+        self.assertEqual(self.auto_jobs(m), ["New_TLR_2K_SMPTE_OV"])
+
+    def test_restart_verifies_nothing(self):
+        self.manager()
+        self.assertEqual(self.manager().jobs, {})
+
+    def test_unmounted_share_verifies_nothing(self):
+        m = self.manager()
+        hidden = self.root + ".away"
+        os.rename(self.root, hidden)
+        m.rescan()
+        self.assertEqual(m.dcps, {})
+        os.rename(hidden, self.root)
+        m.rescan()
+        self.assertEqual(m.jobs, {})
+
+    def test_can_be_turned_off(self):
+        m = self.manager(auto=False)
+        self.add("New_TLR_2K_SMPTE_OV")
+        m.rescan()
+        self.assertEqual(m.jobs, {})
 
 
 if __name__ == "__main__":

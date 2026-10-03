@@ -26,6 +26,9 @@ const SEV = {
   bv21: { label: 'Bv2.1', title: 'Not compliant with the ISDCF Bv2.1 recommendations' },
   warn: { label: 'Warning', title: 'Worth checking, should not block playback' }
 };
+// Verifications the server started by itself, and why.
+const AUTO_STARTED = { copy: 'Started by itself at the end of the copy.', new: 'Started by itself for this new DCP.' };
+const AUTO_RESULT = { copy: 'started after the copy', new: 'started for a new DCP' };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const NOTE_PAGE = 200;
 
@@ -233,7 +236,7 @@ ${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span
     html += `<div class="running">
 <div class="running-line"><span class="running-stage">${esc(d.job.stage || 'Starting the verifier…')}</span><span class="mono">${pct} %</span></div>
 <div class="bar big" role="progressbar" aria-label="Progress of the current step" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span class="bar-live" style="width:${pct}%"></span></div>
-<span class="hint">${d.job.auto ? 'Started by itself at the end of the copy. ' : ''}Running for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.job.started_at))}. This can take a while. <a href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Live output</a></span>
+<span class="hint">${AUTO_STARTED[d.job.auto] ? AUTO_STARTED[d.job.auto] + ' ' : ''}Running for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.job.started_at))}. This can take a while. <a href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Live output</a></span>
 </div>`;
   } else if (st === 'copying') {
     const c = d.copy;
@@ -268,7 +271,7 @@ function resultHtml(d, res) {
   const c = res.counts || { error: 0, bv21: 0, warn: 0 };
   let html = `<div style="display: flex; flex-direction: column">
 <div class="result-head"><span class="eyebrow">${d.job ? 'Previous result' : 'Last result'}</span>
-<span class="when">${esc(fmtDate(res.finished_at))}${res.auto ? ' · started after the copy' : ''} · took ${esc(fmtDur(res.elapsed))}${res.verifier ? ' · DCP-o-matic ' + esc(res.verifier) : ''}</span></div>`;
+<span class="when">${esc(fmtDate(res.finished_at))}${AUTO_RESULT[res.auto] ? ' · ' + AUTO_RESULT[res.auto] : ''} · took ${esc(fmtDur(res.elapsed))}${res.verifier ? ' · DCP-o-matic ' + esc(res.verifier) : ''}</span></div>`;
 
   if (res.status === 'failed') {
     html += `<div class="banner bad" style="margin-top: 16px">${ICON_BAD}<div><b>The verification did not complete</b><span>${esc(res.failure || 'The verifier stopped unexpectedly.')}</span></div></div>`;

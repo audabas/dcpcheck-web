@@ -34,6 +34,7 @@ class Config:
     scan_interval: int
     copy_quiet: int
     copy_poll: float
+    auto_verify: bool
     host: str
     port: int
     verifier_version: str
@@ -59,6 +60,7 @@ class Config:
             scan_interval=int(e("SCAN_INTERVAL", "300")),
             copy_quiet=int(e("COPY_QUIET", "20")),
             copy_poll=float(e("COPY_POLL", "3")),
+            auto_verify=e("AUTO_VERIFY", "1").lower() not in ("0", "false", "no", "off"),
             host=e("HOST", "0.0.0.0"),
             port=int(e("PORT", "8080")),
             verifier_version=version,

@@ -64,7 +64,8 @@ If this project is useful to you, DCP-o-matic is what you should thank:
 - Runs `dcpomatic2_verify_cli` on demand, one DCP at a time (the others wait
   in a queue), with live progress and a Cancel button.
 - Notices DCPs that are still being copied to the disk: while a folder keeps
-  growing, it shows the copy speed instead of the Verify button.
+  growing, it shows the copy's progress and speed instead of the Verify
+  button, then verifies the DCP by itself once the copy is complete.
 - Marks a DCP without errors as **OK**, with small flags for its Bv2.1
   issues and warnings.
 - Sorts the notes into **Errors**, **Bv2.1 issues** and **Warnings**, with
@@ -139,6 +140,7 @@ Environment variables of the container:
 | `MAX_PARALLEL`   | `1`                     | Number of verifications run at the same time. |
 | `COPY_QUIET`     | `20`                    | Seconds without any change after which a folder being copied is considered complete. |
 | `COPY_POLL`      | `3`                     | Seconds between two measures of a folder being copied (for its speed). |
+| `AUTO_VERIFY`    | `1`                     | Verify a DCP by itself when its copy is complete. Set to `0` to turn it off. |
 | `VERIFY_ARGS`    | *(empty)*               | Extra options for `dcpomatic2_verify_cli`, e.g. `--no-asset-hash-check`. Run `docker exec dcpcheck dcpomatic2_verify_cli --help` for the list. |
 | `HTML_REPORT`    | `1`                     | Ask the verifier for its HTML report (`-o`). Set to `0` to turn it off. |
 | `PUID` / `PGID`  | *(empty: root)*         | Run as this user/group. |
@@ -193,10 +195,17 @@ proxy with an access-control profile.
 A DCP counts as being copied when its size, its size on disk or the newest
 change time of its files moves between two measures, or when it was written
 to just before it was found. dcpcheck then measures it every `COPY_POLL`
-seconds until nothing changes for `COPY_QUIET` seconds. The size on disk
-matters for copies that give a file its final size before writing it (Windows
-over SMB does). A new DCP only appears at the next scan: press *Rescan
-directory* to see it at once.
+seconds until nothing changes for `COPY_QUIET` seconds. It counts the bytes
+actually on disk, so that copies that give a file its final size before
+writing it (Windows over SMB does) still show their progress. The percentage
+compares them to the total size of the assets listed in the DCP's packing
+list (PKL), so it only shows once the PKL has arrived.
+
+When the copy is over, the verification starts by itself if dcpcheck saw
+data arriving and the PKL says that everything is there. A copy that stopped
+half-way, or a folder whose files only got new dates (after a change of
+permissions, say), is left alone. A new DCP only appears at the next scan:
+press *Rescan directory* to see it at once.
 
 When a verification ends without any note and with a non-zero exit code,
 dcpcheck shows it as *Verifier failed*. The raw output, a click away,
@@ -216,7 +225,8 @@ DCP_ROOT=../sample-dcps DATA_DIR=../data VERIFIER=../dev/fake_verify_cli.py \
 ```
 
 To see how a copy in progress looks, make a fake DCP grow at 20 MB/s for 30
-seconds (the bytes are real), then rescan:
+seconds (the bytes are real; add `--presize` to copy like Windows), then
+rescan:
 
 ```sh
 python3 dev/simulate_copy.py sample-dcps/Films/Arriving_FTR_2K_SMPTE_OV 20MB 30

@@ -28,6 +28,24 @@ IOP_CPL = """<?xml version="1.0" encoding="UTF-8"?>
 </CompositionPlaylist>
 """
 
+PKL = """<?xml version="1.0" encoding="UTF-8"?>
+<PackingList xmlns="http://www.smpte-ra.org/schemas/429-8/2007/PKL">
+  <Id>urn:uuid:{id}</Id>
+  <AssetList>
+{assets}  </AssetList>
+</PackingList>
+"""
+
+
+def pkl(sizes):
+    """A PKL listing files with their sizes (their hashes are not checked here)."""
+    assets = "".join(
+        f"    <Asset><Id>urn:uuid:{uuid.uuid4()}</Id><OriginalFileName>{n}</OriginalFileName><Size>{size}</Size></Asset>\n"
+        for n, size in sizes.items()
+    )
+    return PKL.format(id=uuid.uuid4(), assets=assets)
+
+
 SAMPLES = [
     ("Festival2026_ADV_F_FR-XX_FR_20_2K_20260920_SOS_SMPTE_OV", "advertisement", 45 * 24, 1998, 1080, "smpte", "WARN"),
     ("LaTraversee_FTR-1_F_FR-XX_FR-TP_51_2K_20260911_SOS_SMPTE_OV", "feature", 102 * 60 * 24, 1998, 1080, "smpte", ""),
@@ -48,7 +66,11 @@ for name, kind, frames, w, h, std, fake in SAMPLES:
     with open(os.path.join(d, ".fake"), "w") as f:
         f.write(fake)
     seconds = frames / 24
+    sizes = {"cpl.xml": os.path.getsize(os.path.join(d, "cpl.xml"))}
     for n, rate in (("j2c_video.mxf", 29_000_000), ("pcm_audio.mxf", 870_000)):
+        sizes[n] = int(seconds * rate)
         with open(os.path.join(d, n), "wb") as f:
-            f.truncate(int(seconds * rate))
+            f.truncate(sizes[n])
+    with open(os.path.join(d, "pkl.xml"), "w") as f:
+        f.write(pkl(sizes))
 print("Sample DCPs created in", os.path.abspath(root))

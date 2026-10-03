@@ -50,7 +50,7 @@ class Dcp:
     relpath: str
     path: str
     size: int = 0
-    alloc: int = 0      # bytes actually on disk; grows even when a copy pre-sizes its files
+    written: int = 0    # bytes actually written, see measure()
     mtime: float = 0.0  # last change to any file in the folder
     facts: dict = field(default_factory=dict)
 
@@ -101,7 +101,7 @@ def find_dcps(root, max_depth=3):
 
 def describe(path, relpath):
     d = Dcp(id=dcp_id(relpath), name=os.path.basename(os.path.normpath(path)), relpath=relpath, path=path)
-    d.size, d.alloc, d.mtime = measure(path)
+    d.size, d.written, d.mtime = measure(path)
     try:
         d.facts = read_facts(path, d.name)
     except Exception:  # A broken CPL is the verifier's business, not ours.
@@ -110,14 +110,19 @@ def describe(path, relpath):
 
 
 def measure(path):
-    """Return (size, allocated size, last change) of the files in a folder.
+    """Return (size, bytes written, last change) of the files in a folder.
 
     The last change is the newest mtime or ctime: a copy that restores the
-    original mtimes still leaves a fresh ctime. Some copies (Windows over
-    SMB) give a file its final size before writing it, so the allocated
-    size and the change time also tell that a copy is under way.
+    original mtimes still leaves a fresh ctime.
+
+    Some copies give a file its final size before writing it (Windows over
+    SMB), others reserve its space on disk first. The bytes written count,
+    for each file, the smaller of its size and its space on disk, so they
+    grow with the data in both cases. On filesystems that report no space
+    on disk at all, they are the size.
     """
-    size = alloc = 0
+    size = written = 0
+    has_blocks = False
     newest = 0.0
     for dirpath, dirnames, filenames in os.walk(path):
         dirnames[:] = [n for n in dirnames if n not in SKIP_DIRS and not n.startswith(".")]
@@ -126,15 +131,31 @@ def measure(path):
                 st = os.stat(os.path.join(dirpath, f))
             except OSError:
                 continue
+            on_disk = getattr(st, "st_blocks", 0) * 512
+            has_blocks = has_blocks or on_disk > 0
             size += st.st_size
-            alloc += getattr(st, "st_blocks", 0) * 512
+            written += min(st.st_size, on_disk)
             newest = max(newest, st.st_mtime, st.st_ctime)
     if not newest:
         try:
             newest = os.stat(path).st_mtime
         except OSError:
             pass
-    return size, alloc, newest
+    return size, written if has_blocks else size, newest
+
+
+def expected_size(path):
+    """Total size of the assets listed in the folder's packing lists (PKL),
+    or None while no complete PKL is there."""
+    sizes = {}
+    for pkl in find_xml(path, "PackingList"):
+        assets = child(pkl, "AssetList")
+        for a in assets if assets is not None else []:
+            try:
+                sizes[text(a, "Id")] = int(text(a, "Size"))
+            except (TypeError, ValueError):
+                continue
+    return sum(sizes.values()) or None
 
 
 def local(tag):
@@ -156,11 +177,16 @@ def text(el, name):
 
 
 def find_cpls(path):
-    cpls = []
+    return find_xml(path, "CompositionPlaylist")
+
+
+def find_xml(path, kind):
+    """Parse the XML files at the top of a folder whose root element is kind."""
+    found = []
     try:
         names = sorted(os.listdir(path))
     except OSError:
-        return cpls
+        return found
     for n in names:
         if not n.lower().endswith(".xml"):
             continue
@@ -170,14 +196,14 @@ def find_cpls(path):
                 continue
             with open(p, "rb") as f:
                 head = f.read(4096)
-            if b"CompositionPlaylist" not in head:
+            if kind.encode() not in head:
                 continue
             root = ET.parse(p).getroot()
         except (OSError, ET.ParseError):
             continue
-        if local(root.tag) == "CompositionPlaylist":
-            cpls.append(root)
-    return cpls
+        if local(root.tag) == kind:
+            found.append(root)
+    return found
 
 
 def standard_of(path, cpl):

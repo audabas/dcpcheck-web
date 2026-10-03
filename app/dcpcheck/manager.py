@@ -16,12 +16,13 @@ from .output import OutputParser, status_of
 
 
 def measures(d):
-    return d.size, d.alloc, d.mtime
+    return d.size, d.written, d.mtime
 
 
 class Job:
-    def __init__(self, dcp):
+    def __init__(self, dcp, auto=False):
         self.dcp = dcp
+        self.auto = auto  # started by itself at the end of a copy
         self.state = "queued"
         self.queued_at = time.time()
         self.started_at = None
@@ -36,6 +37,7 @@ class Job:
             "progress": round(p.progress, 1),
             "stage": p.stage,
             "started_at": self.started_at,
+            "auto": self.auto,
             "notes_so_far": len(p.notes),
         }
 
@@ -49,13 +51,14 @@ class Copy:
         self.since = now
         self.last_change = now
         self.samples = deque()
+        self.expected = None  # total size announced by the PKL, once it has arrived
+        self.grew = False     # data was seen arriving, not only a change of dates
 
-    def add(self, now, d, changed):
+    def add(self, now, d, changed, grew):
         if changed:
             self.last_change = now
-        # Pre-sized files (Windows over SMB) only show progress in the blocks
-        # on disk; some network filesystems report no blocks at all.
-        self.samples.append((now, d.alloc or d.size))
+        self.grew = self.grew or grew
+        self.samples.append((now, d.written))
         while len(self.samples) > 2 and now - self.samples[0][0] > self.WINDOW:
             self.samples.popleft()
 
@@ -65,8 +68,17 @@ class Copy:
         (t0, b0), (t1, b1) = self.samples[0], self.samples[-1]
         return max(0, round((b1 - b0) / (t1 - t0))) if t1 > t0 else None
 
+    def complete(self):
+        # A little slack: compressed filesystems store the small XML files in fewer bytes.
+        return bool(self.expected and self.samples and self.samples[-1][1] >= self.expected * 0.999)
+
     def public(self):
-        return {"since": self.since, "speed": self.speed()}
+        return {
+            "since": self.since,
+            "speed": self.speed(),
+            "copied": self.samples[-1][1] if self.samples else 0,
+            "expected": self.expected,
+        }
 
 
 class Manager:
@@ -121,9 +133,10 @@ class Manager:
                     prev = old.get(d.id)
                     if prev is None:
                         # First time we see it: a copy may be under way if it was just written to.
-                        self.track(d, now, d.mtime > started - self.cfg.copy_quiet)
+                        fresh = d.mtime > started - self.cfg.copy_quiet
+                        self.track(d, now, fresh, fresh)
                     else:
-                        self.track(d, now, measures(d) != measures(prev))
+                        self.track(d, now, measures(d) != measures(prev), d.written > prev.written)
                 for dcp_id in list(self.copies):
                     if dcp_id not in self.dcps:
                         del self.copies[dcp_id]
@@ -134,14 +147,15 @@ class Manager:
 
     # ---- copies ----------------------------------------------------------
 
-    def track(self, d, now, changed):
-        """Note a new measure of d; changed tells whether it differs from the previous one."""
+    def track(self, d, now, changed, grew):
+        """Note a new measure of d: changed tells whether it differs from the
+        previous one, grew whether more bytes were written."""
         c = self.copies.get(d.id)
         if c is None:
             if not changed:
                 return
             c = self.copies[d.id] = Copy(now)
-        c.add(now, d, changed)
+        c.add(now, d, changed, grew)
 
     def is_copying(self, dcp_id):
         with self.lock:
@@ -160,17 +174,26 @@ class Manager:
                     print(f"warning: could not measure {d.path}: {e}", flush=True)
 
     def remeasure(self, d):
-        size, alloc, mtime = scanner.measure(d.path)
+        size, written, mtime = scanner.measure(d.path)
+        with self.lock:
+            c = self.copies.get(d.id)
+            need_expected = c is not None and c.expected is None
+        expected = scanner.expected_size(d.path) if need_expected else None
         now = time.time()
         with self.lock:
             c = self.copies.get(d.id)
             if c is None or self.dcps.get(d.id) is not d:
                 return
-            changed = (size, alloc, mtime) != measures(d)
-            d.size, d.alloc, d.mtime = size, alloc, mtime
-            self.track(d, now, changed)
+            changed = (size, written, mtime) != measures(d)
+            grew = written > d.written
+            d.size, d.written, d.mtime = size, written, mtime
+            c.expected = c.expected or expected
+            self.track(d, now, changed, grew)
             if now - c.last_change < self.cfg.copy_quiet:
                 return
+            # Only verify what we saw arriving in full: not a folder whose dates
+            # merely changed, nor a copy that stopped half-way.
+            auto = self.cfg.auto_verify and c.grew and c.complete()
         # The copy is over. Its CPL may have arrived after the scan read the facts.
         try:
             facts = scanner.read_facts(d.path, d.name)
@@ -179,6 +202,8 @@ class Manager:
         with self.lock:
             d.facts = facts
             self.copies.pop(d.id, None)
+        if auto:
+            self.verify(d.id, auto=True)
 
     def start(self):
         threading.Thread(target=self.rescan, daemon=True).start()
@@ -222,6 +247,7 @@ class Manager:
                 "scanning": self.scanning,
                 "now": time.time(),
                 "verifier": self.cfg.verifier_version,
+                "auto_verify": self.cfg.auto_verify,
                 "dcps": [self.summary(d) for d in self.dcps.values()],
             }
 
@@ -245,13 +271,13 @@ class Manager:
 
     # ---- jobs ------------------------------------------------------------
 
-    def verify(self, dcp_id):
+    def verify(self, dcp_id, auto=False):
         with self.lock:
             d = self.dcps.get(dcp_id)
             if d is None or dcp_id in self.copies:
                 return False
             if dcp_id not in self.jobs:
-                self.jobs[dcp_id] = Job(d)
+                self.jobs[dcp_id] = Job(d, auto)
                 self.queue.append(dcp_id)
                 self.wake.notify()
             return True
@@ -378,6 +404,7 @@ class Manager:
             "exit_code": rc,
             "failure": failure,
             "report": has_report,
+            "auto": job.auto,
             "verifier": self.cfg.verifier_version,
         }
         with self.lock:

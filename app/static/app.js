@@ -62,6 +62,11 @@ function fmtDur(s) {
   if (h) return h + 'h ' + pad(m) + 'm';
   return m ? m + 'm ' + pad(sec) + 's' : sec + 's';
 }
+function fmtLeft(s) {
+  if (s < 60) return 'less than a minute left';
+  const m = Math.round(s / 60);
+  return 'about ' + (m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + pad(m % 60) + ' min') + ' left';
+}
 function fmtSize(b) {
   if (!b) return '—';
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
@@ -83,6 +88,12 @@ function fmtSpeed(b) {
   return b == null ? 'Measuring…' : fmtSize(b).replace('—', '0 B') + '/s';
 }
 
+// Share of the copy done, once the PKL has told the final size.
+function copyPct(d) {
+  const c = d.copy;
+  return c && c.expected ? Math.min(100, Math.floor(c.copied / c.expected * 100)) : null;
+}
+
 function statusOf(d) {
   if (d.job) return d.job.state === 'running' ? 'running' : 'queued';
   if (d.copy) return 'copying';
@@ -92,6 +103,7 @@ function statusLabel(d) {
   const st = statusOf(d);
   if (st === 'running') return 'Running · ' + Math.floor(d.job.progress) + '%';
   if (st === 'queued') return 'Queued' + (d.queue_position ? ' · #' + d.queue_position : '');
+  if (st === 'copying' && copyPct(d) != null) return 'Copying · ' + copyPct(d) + '%';
   return STATUS[st].label;
 }
 function plural(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
@@ -165,6 +177,7 @@ function rowHtml(d) {
 <span class="row-name">${esc(d.relpath)}</span>
 <span class="row-meta"><span class="row-status">${statusHtml(d)}</span><span>${esc(line)}</span><span>${esc(fmtSize(d.size))}</span></span>
 ${running ? `<span class="bar"><span class="bar-live" style="width:${Math.floor(d.job.progress)}%"></span></span>` : ''}
+${st === 'copying' && copyPct(d) != null ? `<span class="bar"><span class="bar-live bar-copy" style="width:${copyPct(d)}%"></span></span>` : ''}
 </button>
 <div class="row-side">${side}</div>`;
 }
@@ -220,13 +233,22 @@ ${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span
     html += `<div class="running">
 <div class="running-line"><span class="running-stage">${esc(d.job.stage || 'Starting the verifier…')}</span><span class="mono">${pct} %</span></div>
 <div class="bar big" role="progressbar" aria-label="Progress of the current step" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><span class="bar-live" style="width:${pct}%"></span></div>
-<span class="hint">Running for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.job.started_at))}. Every MXF file is read in full to check its hash, so a feature can take a while on a NAS. <a href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Live output</a></span>
+<span class="hint">${d.job.auto ? 'Started by itself at the end of the copy. ' : ''}Running for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.job.started_at))}. This can take a while. <a href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Live output</a></span>
 </div>`;
   } else if (st === 'copying') {
+    const c = d.copy;
+    const pct = copyPct(d);
+    let hint;
+    if (pct == null) {
+      hint = `${fmtSize(c.copied)} so far, growing for ${fmtDur(Date.now() / 1000 - ui.clockSkew - c.since)}. The total size will show once the packing list (PKL) has arrived.`;
+    } else {
+      const left = c.speed > 0 && c.expected > c.copied ? ', ' + fmtLeft((c.expected - c.copied) / c.speed) : '';
+      hint = `${fmtSize(c.copied)} of ${fmtSize(c.expected)}${left}.`;
+    }
     html += `<div class="running">
-<div class="running-line"><span class="running-stage">This folder is still being copied</span><span class="mono c-copying">${esc(fmtSpeed(d.copy.speed))}</span></div>
-<div class="bar big"><span class="bar-live bar-copy" style="width:100%"></span></div>
-<span class="hint">${esc(fmtSize(d.size))} so far, growing for ${esc(fmtDur(Date.now() / 1000 - ui.clockSkew - d.copy.since))}. The verification can start once the folder stops growing.</span>
+<div class="running-line"><span class="running-stage">This folder is still being copied · <span class="mono c-copying">${esc(fmtSpeed(c.speed))}</span></span>${pct != null ? `<span class="mono c-copying">${pct} %</span>` : ''}</div>
+<div class="bar big"${pct != null ? ` role="progressbar" aria-label="Copy progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"` : ''}><span class="bar-live bar-copy" style="width:${pct != null ? pct : 100}%"></span></div>
+<span class="hint">${esc(hint)} ${ui.state.auto_verify ? 'The verification will start by itself once the copy is complete.' : 'The verification can start once the folder stops growing.'}</span>
 </div>`;
   } else if (queued) {
     html += `<div class="running"><span class="running-stage">Waiting in the queue${d.queue_position ? ' (position ' + d.queue_position + ')' : ''}.</span><span class="hint">Verifications run one after the other so that they don't fight over the disks.</span></div>`;
@@ -246,7 +268,7 @@ function resultHtml(d, res) {
   const c = res.counts || { error: 0, bv21: 0, warn: 0 };
   let html = `<div style="display: flex; flex-direction: column">
 <div class="result-head"><span class="eyebrow">${d.job ? 'Previous result' : 'Last result'}</span>
-<span class="when">${esc(fmtDate(res.finished_at))} · took ${esc(fmtDur(res.elapsed))}${res.verifier ? ' · DCP-o-matic ' + esc(res.verifier) : ''}</span></div>`;
+<span class="when">${esc(fmtDate(res.finished_at))}${res.auto ? ' · started after the copy' : ''} · took ${esc(fmtDur(res.elapsed))}${res.verifier ? ' · DCP-o-matic ' + esc(res.verifier) : ''}</span></div>`;
 
   if (res.status === 'failed') {
     html += `<div class="banner bad" style="margin-top: 16px">${ICON_BAD}<div><b>The verification did not complete</b><span>${esc(res.failure || 'The verifier stopped unexpectedly.')}</span></div></div>`;

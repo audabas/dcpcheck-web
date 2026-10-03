@@ -50,7 +50,8 @@ class Dcp:
     relpath: str
     path: str
     size: int = 0
-    mtime: float = 0.0
+    alloc: int = 0      # bytes actually on disk; grows even when a copy pre-sizes its files
+    mtime: float = 0.0  # last change to any file in the folder
     facts: dict = field(default_factory=dict)
 
 
@@ -100,11 +101,7 @@ def find_dcps(root, max_depth=3):
 
 def describe(path, relpath):
     d = Dcp(id=dcp_id(relpath), name=os.path.basename(os.path.normpath(path)), relpath=relpath, path=path)
-    d.size = folder_size(path)
-    try:
-        d.mtime = os.stat(path).st_mtime
-    except OSError:
-        pass
+    d.size, d.alloc, d.mtime = measure(path)
     try:
         d.facts = read_facts(path, d.name)
     except Exception:  # A broken CPL is the verifier's business, not ours.
@@ -112,16 +109,32 @@ def describe(path, relpath):
     return d
 
 
-def folder_size(path):
-    total = 0
+def measure(path):
+    """Return (size, allocated size, last change) of the files in a folder.
+
+    The last change is the newest mtime or ctime: a copy that restores the
+    original mtimes still leaves a fresh ctime. Some copies (Windows over
+    SMB) give a file its final size before writing it, so the allocated
+    size and the change time also tell that a copy is under way.
+    """
+    size = alloc = 0
+    newest = 0.0
     for dirpath, dirnames, filenames in os.walk(path):
         dirnames[:] = [n for n in dirnames if n not in SKIP_DIRS and not n.startswith(".")]
         for f in filenames:
             try:
-                total += os.stat(os.path.join(dirpath, f)).st_size
+                st = os.stat(os.path.join(dirpath, f))
             except OSError:
-                pass
-    return total
+                continue
+            size += st.st_size
+            alloc += getattr(st, "st_blocks", 0) * 512
+            newest = max(newest, st.st_mtime, st.st_ctime)
+    if not newest:
+        try:
+            newest = os.stat(path).st_mtime
+        except OSError:
+            pass
+    return size, alloc, newest
 
 
 def local(tag):

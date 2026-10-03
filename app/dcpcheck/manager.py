@@ -15,6 +15,10 @@ from . import scanner
 from .output import OutputParser, status_of
 
 
+def measures(d):
+    return d.size, d.alloc, d.mtime
+
+
 class Job:
     def __init__(self, dcp):
         self.dcp = dcp
@@ -36,6 +40,35 @@ class Job:
         }
 
 
+class Copy:
+    """A DCP folder that is still being written to, e.g. copied to the NAS."""
+
+    WINDOW = 15  # seconds of samples the speed is averaged over
+
+    def __init__(self, now):
+        self.since = now
+        self.last_change = now
+        self.samples = deque()
+
+    def add(self, now, d, changed):
+        if changed:
+            self.last_change = now
+        # Pre-sized files (Windows over SMB) only show progress in the blocks
+        # on disk; some network filesystems report no blocks at all.
+        self.samples.append((now, d.alloc or d.size))
+        while len(self.samples) > 2 and now - self.samples[0][0] > self.WINDOW:
+            self.samples.popleft()
+
+    def speed(self):
+        if len(self.samples) < 2:
+            return None
+        (t0, b0), (t1, b1) = self.samples[0], self.samples[-1]
+        return max(0, round((b1 - b0) / (t1 - t0))) if t1 > t0 else None
+
+    def public(self):
+        return {"since": self.since, "speed": self.speed()}
+
+
 class Manager:
     def __init__(self, config):
         self.cfg = config
@@ -46,6 +79,7 @@ class Manager:
         self.scanning = False
         self.jobs = {}
         self.queue = deque()
+        self.copies = {}  # DCP id -> Copy, for the folders still growing
         os.makedirs(self.path("logs"), exist_ok=True)
         os.makedirs(self.path("reports"), exist_ok=True)
         os.makedirs(self.path("home"), exist_ok=True)
@@ -77,18 +111,80 @@ class Manager:
                 return
             self.scanning = True
         try:
+            started = time.time()
             found = scanner.find_dcps(self.cfg.dcp_root, self.cfg.scan_depth)
+            now = time.time()
             with self.lock:
+                old = self.dcps
                 self.dcps = {d.id: d for d in found}
-                self.scanned_at = time.time()
+                for d in found:
+                    prev = old.get(d.id)
+                    if prev is None:
+                        # First time we see it: a copy may be under way if it was just written to.
+                        self.track(d, now, d.mtime > started - self.cfg.copy_quiet)
+                    else:
+                        self.track(d, now, measures(d) != measures(prev))
+                for dcp_id in list(self.copies):
+                    if dcp_id not in self.dcps:
+                        del self.copies[dcp_id]
+                self.scanned_at = now
         finally:
             with self.lock:
                 self.scanning = False
+
+    # ---- copies ----------------------------------------------------------
+
+    def track(self, d, now, changed):
+        """Note a new measure of d; changed tells whether it differs from the previous one."""
+        c = self.copies.get(d.id)
+        if c is None:
+            if not changed:
+                return
+            c = self.copies[d.id] = Copy(now)
+        c.add(now, d, changed)
+
+    def is_copying(self, dcp_id):
+        with self.lock:
+            return dcp_id in self.copies
+
+    def watch_copies(self):
+        """Measure the folders being copied every few seconds until they stop changing."""
+        while True:
+            time.sleep(self.cfg.copy_poll)
+            with self.lock:
+                targets = [self.dcps[i] for i in self.copies if i in self.dcps]
+            for d in targets:
+                try:
+                    self.remeasure(d)
+                except Exception as e:  # Never let the watcher die.
+                    print(f"warning: could not measure {d.path}: {e}", flush=True)
+
+    def remeasure(self, d):
+        size, alloc, mtime = scanner.measure(d.path)
+        now = time.time()
+        with self.lock:
+            c = self.copies.get(d.id)
+            if c is None or self.dcps.get(d.id) is not d:
+                return
+            changed = (size, alloc, mtime) != measures(d)
+            d.size, d.alloc, d.mtime = size, alloc, mtime
+            self.track(d, now, changed)
+            if now - c.last_change < self.cfg.copy_quiet:
+                return
+        # The copy is over. Its CPL may have arrived after the scan read the facts.
+        try:
+            facts = scanner.read_facts(d.path, d.name)
+        except Exception:
+            facts = d.facts
+        with self.lock:
+            d.facts = facts
+            self.copies.pop(d.id, None)
 
     def start(self):
         threading.Thread(target=self.rescan, daemon=True).start()
         for _ in range(max(1, self.cfg.max_parallel)):
             threading.Thread(target=self.worker, daemon=True).start()
+        threading.Thread(target=self.watch_copies, daemon=True).start()
         if self.cfg.scan_interval > 0:
             threading.Thread(target=self.periodic_scan, daemon=True).start()
 
@@ -104,6 +200,7 @@ class Manager:
         if res and not with_notes:
             res = {k: v for k, v in res.items() if k != "notes"}
         job = self.jobs.get(d.id)
+        copy = self.copies.get(d.id)
         return {
             "id": d.id,
             "name": d.name,
@@ -112,6 +209,7 @@ class Manager:
             "mtime": d.mtime,
             "facts": d.facts,
             "job": job.public() if job else None,
+            "copy": copy.public() if copy else None,
             "queue_position": self.queue.index(d.id) + 1 if d.id in self.queue else None,
             "result": res,
         }
@@ -150,7 +248,7 @@ class Manager:
     def verify(self, dcp_id):
         with self.lock:
             d = self.dcps.get(dcp_id)
-            if d is None:
+            if d is None or dcp_id in self.copies:
                 return False
             if dcp_id not in self.jobs:
                 self.jobs[dcp_id] = Job(d)

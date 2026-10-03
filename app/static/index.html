@@ -31,8 +31,21 @@
   <main>
     <section class="list" aria-labelledby="list-title">
       <div class="section-head">
-        <h2 class="eyebrow" id="list-title">Folders</h2>
-        <span class="muted" style="font-size: 13px" id="count"></span>
+        <div class="section-title">
+          <h2 class="eyebrow" id="list-title">Folders</h2>
+          <span class="muted" style="font-size: 13px" id="count"></span>
+        </div>
+        <div class="sort" role="group" aria-label="Sort the folders">
+          <label class="sort-by"><span>Sort by</span>
+            <select id="sort">
+              <option value="name">Name</option>
+              <option value="size">Size</option>
+              <option value="status">Status</option>
+              <option value="date">Last updated</option>
+            </select>
+          </label>
+          <button class="btn btn-sec btn-sort" id="sort-dir" type="button" title="Reverse the order">A → Z</button>
+        </div>
       </div>
       <div id="rows" style="display: flex; flex-direction: column; gap: 12px"></div>
     </section>

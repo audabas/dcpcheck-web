@@ -60,8 +60,13 @@ If this project is useful to you, DCP-o-matic is what you should thank:
   minutes or on demand.
 - Shows a summary of each DCP read from its CPL: type, standard
   (SMPTE/Interop), picture container, duration, sound and size.
+- Sorts the list by name, size, status or date of last change.
 - Runs `dcpomatic2_verify_cli` on demand, one DCP at a time (the others wait
   in a queue), with live progress and a Cancel button.
+- Notices DCPs that are still being copied to the disk: while a folder keeps
+  growing, it shows the copy speed instead of the Verify button.
+- Marks a DCP without errors as **OK**, with small flags for its Bv2.1
+  issues and warnings.
 - Sorts the notes into **Errors**, **Bv2.1 issues** and **Warnings**, with
   filters.
 - Keeps the last result of each DCP, the verifier's full HTML report and its
@@ -132,6 +137,8 @@ Environment variables of the container:
 | `SCAN_DEPTH`     | `3`                     | How many levels of sub-folders to search for DCPs. |
 | `SCAN_INTERVAL`  | `300`                   | Seconds between automatic rescans (`0` to disable). |
 | `MAX_PARALLEL`   | `1`                     | Number of verifications run at the same time. |
+| `COPY_QUIET`     | `20`                    | Seconds without any change after which a folder being copied is considered complete. |
+| `COPY_POLL`      | `3`                     | Seconds between two measures of a folder being copied (for its speed). |
 | `VERIFY_ARGS`    | *(empty)*               | Extra options for `dcpomatic2_verify_cli`, e.g. `--no-asset-hash-check`. Run `docker exec dcpcheck dcpomatic2_verify_cli --help` for the list. |
 | `HTML_REPORT`    | `1`                     | Ask the verifier for its HTML report (`-o`). Set to `0` to turn it off. |
 | `PUID` / `PGID`  | *(empty: root)*         | Run as this user/group. |
@@ -183,6 +190,14 @@ proxy with an access-control profile.
   It loads its fonts from Google Fonts and falls back to system fonts when
   offline.
 
+A DCP counts as being copied when its size, its size on disk or the newest
+change time of its files moves between two measures, or when it was written
+to just before it was found. dcpcheck then measures it every `COPY_POLL`
+seconds until nothing changes for `COPY_QUIET` seconds. The size on disk
+matters for copies that give a file its final size before writing it (Windows
+over SMB does). A new DCP only appears at the next scan: press *Rescan
+directory* to see it at once.
+
 When a verification ends without any note and with a non-zero exit code,
 dcpcheck shows it as *Verifier failed*. The raw output, a click away,
 says why.
@@ -200,6 +215,13 @@ DCP_ROOT=../sample-dcps DATA_DIR=../data VERIFIER=../dev/fake_verify_cli.py \
 # open http://localhost:8080
 ```
 
+To see how a copy in progress looks, make a fake DCP grow at 20 MB/s for 30
+seconds (the bytes are real), then rescan:
+
+```sh
+python3 dev/simulate_copy.py sample-dcps/Films/Arriving_FTR_2K_SMPTE_OV 20MB 30
+```
+
 Tests use only the standard library:
 
 ```sh
@@ -209,7 +231,8 @@ python3 -m unittest discover -s tests
 ## License
 
 The code in this repository is released under the
-[WTFPL](LICENSE): do what the fuck you want to.
+[Licence Publique Rien À Branler](LICENSE) (LPRAB), the French version of
+the WTFPL: *faites ce que vous voulez, j’en ai rien à branler*.
 
 This license only covers dcpcheck itself. **DCP-o-matic is © Carl
 Hetherington and contributors, licensed under the

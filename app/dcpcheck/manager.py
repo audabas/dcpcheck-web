@@ -22,7 +22,7 @@ def measures(d):
 class Job:
     def __init__(self, dcp, auto=False):
         self.dcp = dcp
-        self.auto = auto  # started by itself at the end of a copy
+        self.auto = auto  # why it started by itself: "copy" (a copy ended) or "new" (a new DCP), else False
         self.state = "queued"
         self.queued_at = time.time()
         self.started_at = None
@@ -96,6 +96,7 @@ class Manager:
         os.makedirs(self.path("reports"), exist_ok=True)
         os.makedirs(self.path("home"), exist_ok=True)
         self.results = self.load_results()
+        self.known = self.load_known()
 
     # ---- persistence -----------------------------------------------------
 
@@ -108,6 +109,20 @@ class Manager:
                 return json.load(f)
         except (OSError, ValueError):
             return {}
+
+    def load_known(self):
+        """The DCPs seen so far, or None before the first scan that found any."""
+        try:
+            with open(self.path("known.json"), encoding="utf-8") as f:
+                return set(json.load(f))
+        except (OSError, ValueError):
+            return None
+
+    def save_known(self):
+        tmp = self.path("known.json.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(sorted(self.known), f, ensure_ascii=False, indent=0)
+        os.replace(tmp, self.path("known.json"))
 
     def save_results(self):
         tmp = self.path("results.json.tmp")
@@ -141,9 +156,34 @@ class Manager:
                     if dcp_id not in self.dcps:
                         del self.copies[dcp_id]
                 self.scanned_at = now
+                new = self.note_known(found)
+            # A DCP still being copied is verified when its copy is complete.
+            for d in new:
+                if d.id not in self.copies:
+                    self.verify(d.id, auto="new")
         finally:
             with self.lock:
                 self.scanning = False
+
+    def note_known(self, found):
+        """Remember the DCPs found; return the ones never seen before.
+
+        The DCPs already there at the first start count as known, so that
+        installing dcpcheck doesn't verify a whole library. A DCP is never
+        forgotten: a share unmounted for a while doesn't make its DCPs new.
+        """
+        if not found:
+            return []
+        if self.known is None:
+            new = []
+            self.known = set()
+        else:
+            new = [d for d in found if d.relpath not in self.known and d.relpath not in self.results]
+        before = len(self.known)
+        self.known |= {d.relpath for d in found}
+        if len(self.known) != before:
+            self.save_known()
+        return new if self.cfg.auto_verify else []
 
     # ---- copies ----------------------------------------------------------
 
@@ -203,7 +243,7 @@ class Manager:
             d.facts = facts
             self.copies.pop(d.id, None)
         if auto:
-            self.verify(d.id, auto=True)
+            self.verify(d.id, auto="copy")
 
     def start(self):
         threading.Thread(target=self.rescan, daemon=True).start()

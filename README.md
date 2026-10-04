@@ -37,7 +37,9 @@ it and shows what it says. If this project is useful to you, consider
   under the mounted directory and its sub-folders, rescanning every 5
   minutes or on demand.
 - Shows a summary of each DCP read from its CPL: type, standard
-  (SMPTE/Interop), picture container, duration, sound and size.
+  (SMPTE/Interop), picture container, duration, sound, size, and whether
+  it needs a **KDM** (it does when the CPL lists encrypted assets). Encrypted
+  DCPs carry a *KDM* flag in the list.
 - Sorts the list by name, size, status or date of last change.
 - Runs `dcpomatic2_verify_cli` on demand, one DCP at a time (the others wait
   in a queue), with live progress and a Cancel button.
@@ -49,7 +51,9 @@ it and shows what it says. If this project is useful to you, consider
   issues and warnings.
 - Sorts the notes into **Critical errors**, **Minor errors**, **Bv2.1
   issues** and **Warnings**, with filters (see
-  [Critical and minor errors](#critical-and-minor-errors)).
+  [Critical and minor errors](#critical-and-minor-errors)). Errors come
+  first; the Bv2.1 issues and warnings come after them, hidden until you
+  ask for them.
 - Keeps the last result of each DCP, the verifier's full HTML report and its
   raw output.
 - Mounts your DCPs **read-only**: dcpcheck never writes to them.

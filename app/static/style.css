@@ -18,6 +18,7 @@
   --bv21: #C7A6FF;
   --error: #FF8A7A;
   --minor: #FFA45C;
+  --kdm: #D9CFBF;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: 'Schibsted Grotesk', 'Helvetica Neue', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color-scheme: dark;
@@ -102,6 +103,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .flag { display: inline-flex; align-items: center; padding: 1px 7px; border-radius: 5px; font-size: 12px; font-weight: 600; line-height: 1.5; white-space: nowrap; }
 .flag.bv21 { color: var(--bv21); background: rgba(199, 166, 255, 0.13); }
 .flag.warn { color: var(--warn); background: rgba(242, 181, 68, 0.13); }
+.flag.kdm { gap: 5px; color: var(--kdm); background: rgba(217, 207, 191, 0.12); }
 .status { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; flex: 0 0 auto; }
 .empty-list { padding: 28px 20px; background: var(--panel); border: 1px dashed var(--line-strong); border-radius: 12px; color: var(--muted); font-size: 14px; }
@@ -169,6 +171,9 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .note-msg { font-size: 15px; line-height: 1.5; word-break: break-word; }
 .note-ref { display: flex; flex-wrap: wrap; gap: 4px 14px; font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
 .more { padding: 14px 26px 20px; border-top: 1px solid var(--line); }
+.fold { padding-bottom: 14px; }
+.fold .chevron { transition: transform .15s; }
+.fold [aria-expanded="true"] .chevron { transform: rotate(90deg); }
 
 .c-ok { color: var(--ok); }
 .c-warn { color: var(--warn); }

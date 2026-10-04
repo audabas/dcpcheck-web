@@ -202,15 +202,14 @@ so that you can tell at a glance whether a DCP will play:
 - **Critical errors** may stop the DCP from being ingested or played:
   missing or unreadable files, wrong hashes, damaged JPEG2000 frames, a bit
   rate over 250 Mbit/s, an invalid frame rate, mixed SMPTE and Interop
-  parts, durations under one second, and so on. A DCP with one of them is
+  parts, durations under one second, broken subtitles or closed captions
+  (missing fonts, empty subtitles…), and so on. A DCP with one of them is
   shown as **Critical errors**, in red.
 - **Minor errors** should not stop it from playing: XML that does not follow
   the schema (an element in the wrong place in the ASSETMAP, say), wrong
-  metadata such as `<ContentKind>` or `<MainSoundConfiguration>`, and
-  problems in the subtitles or closed captions. A DCP that only has those is
-  shown as **Minor errors**, in orange. Its picture and sound should play,
-  but the errors are worth reporting to whoever made it, and its subtitles
-  worth a look.
+  metadata such as `<ContentKind>` or `<MainSoundConfiguration>`. A DCP
+  that only has those is shown as **Minor errors**, in orange. It should
+  play, but the errors are worth reporting to whoever made it.
 
 The verifier prints no error codes, so dcpcheck recognises the minor errors
 by their wording (the list is `MINOR_ERRORS` in `app/dcpcheck/output.py`).

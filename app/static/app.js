@@ -30,6 +30,9 @@ const SEV = {
   bv21: { label: 'Bv2.1', title: 'Not compliant with the ISDCF Bv2.1 recommendations' },
   warn: { label: 'Warning', title: 'Worth checking, should not block playback' }
 };
+// Order of the notes: errors first. Bv2.1 issues and warnings come last, folded.
+const SEV_ORDER = { error: 0, minor: 1, bv21: 2, warn: 3 };
+const FOLDED = { bv21: 1, warn: 1 };
 // Verifications the server started by itself, and why.
 const AUTO_STARTED = { copy: 'Started by itself at the end of the copy.', new: 'Started by itself for this new DCP.' };
 const AUTO_RESULT = { copy: 'started after the copy', new: 'started for a new DCP' };
@@ -41,6 +44,7 @@ const ui = {
   selected: load('selected'),
   filter: 'all',
   showAll: false,
+  showFolded: false, // Bv2.1 issues and warnings unfolded in the "All" view
   sort: SORTS[load('sort')] ? load('sort') : 'name',
   reverse: load('reverse') === '1',
   detail: null,      // full detail (with notes) of the selected DCP
@@ -121,6 +125,9 @@ function flagsHtml(d) {
   if (c.warn) html += `<span class="flag warn" title="${esc(plural(c.warn, 'warning', 'warnings'))}">${c.warn} warn.</span>`;
   return html;
 }
+function kdmHtml(d) {
+  return d.facts && d.facts.kdm ? `<span class="flag kdm" title="Encrypted: plays only with a KDM">${ICON_KEY}KDM</span>` : '';
+}
 function statusHtml(d) {
   const st = statusOf(d);
   const cls = PASSED[st] ? 'ok' : st;
@@ -182,7 +189,7 @@ function rowHtml(d) {
   }
   return `<button class="row-main" type="button" data-select="${esc(d.id)}" data-key="sel-${esc(d.id)}" aria-pressed="${sel}">
 <span class="row-name">${esc(d.relpath)}</span>
-<span class="row-meta"><span class="row-status">${statusHtml(d)}</span><span>${esc(line)}</span><span>${esc(fmtSize(d.size))}</span></span>
+<span class="row-meta"><span class="row-status">${statusHtml(d)}${kdmHtml(d)}</span><span>${esc(line)}</span><span>${esc(fmtSize(d.size))}</span></span>
 ${running ? `<span class="bar"><span class="bar-live" style="width:${Math.floor(d.job.progress)}%"></span></span>` : ''}
 ${st === 'copying' && copyPct(d) != null ? `<span class="bar"><span class="bar-live bar-copy" style="width:${copyPct(d)}%"></span></span>` : ''}
 </button>
@@ -196,6 +203,8 @@ function emptyListHtml(s) {
 
 const ICON_SPIN = '<svg class="spin" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6" opacity=".25"></circle><path d="M14 8a6 6 0 0 0-6-6"></path></svg>';
 const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.8v10.4a.6.6 0 0 0 .9.5l8.4-5.2a.6.6 0 0 0 0-1L3.9 1.3a.6.6 0 0 0-.9.5z"></path></svg>';
+const ICON_KEY = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.8" cy="8.2" r="2.3"></circle><path d="M5.5 6.5L10.5 1.5M8.5 3.5l1.5 1.5"></path></svg>';
+const ICON_CHEVRON = '<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5L8 6l-3.5 3.5"></path></svg>';
 const ICON_OK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#74D3AE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
 const ICON_BAD = iconAlert('#FF8A7A');
 const ICON_MINOR = iconAlert('#FFA45C');
@@ -208,7 +217,8 @@ function detailHtml(d) {
   const f = d.facts || {};
   const facts = [
     ['Type', f.kind], ['Standard', f.standard], ['Picture', f.picture],
-    ['Duration', f.duration], ['Sound', f.sound], ['Size', fmtSize(d.size)]
+    ['Duration', f.duration], ['Sound', f.sound], ['Size', fmtSize(d.size)],
+    ['KDM', f.kdm == null ? null : f.kdm ? 'Required' : 'Not required']
   ];
   if (f.cpls) facts.push(['CPLs', f.cpls]);
   const st = statusOf(d);
@@ -290,7 +300,7 @@ function resultHtml(d, res) {
       html += `<div class="banner ok">${ICON_OK}<div><b>No issues found</b><span>DCP-o-matic found nothing wrong with this DCP.</span></div></div>`;
     } else if (PASSED[res.status]) {
       const found = [c.bv21 ? plural(c.bv21, 'Bv2.1 issue', 'Bv2.1 issues') : '', c.warn ? plural(c.warn, 'warning', 'warnings') : ''].filter(Boolean).join(' and ');
-      html += `<div class="banner ok">${ICON_OK}<div><b>OK: no errors</b><span>DCP-o-matic found no error in this DCP, only ${esc(found)}, listed below. They are worth a look but should not stop it from playing.</span></div></div>`;
+      html += `<div class="banner ok">${ICON_OK}<div><b>OK: no errors</b><span>DCP-o-matic found no error in this DCP, only ${esc(found)}. They are worth a look but should not stop it from playing.</span></div></div>`;
     } else if (res.status === 'minor') {
       html += `<div class="banner minor">${ICON_MINOR}<div><b>Should play: minor errors only</b><span>DCP-o-matic found ${esc(plural(c.minor, 'error', 'errors'))} in the XML or the metadata, but no critical one. Servers should accept this DCP; tell whoever made it.</span></div></div>`;
     } else if (res.status === 'error') {
@@ -310,18 +320,43 @@ function resultHtml(d, res) {
     if (!notes) {
       html += '<p class="more hint">Loading notes…</p>';
     } else {
-      const shown = notes.filter(n => ui.filter === 'all' || n.sev === ui.filter);
-      const visible = ui.showAll ? shown : shown.slice(0, NOTE_PAGE);
-      html += '<ul class="notes">' + visible.map(n => `<li>
-<span class="sev ${esc(n.sev)}" title="${esc(SEV[n.sev] ? SEV[n.sev].title : '')}">${esc(SEV[n.sev] ? SEV[n.sev].label : n.sev)}</span>
-<div class="note-body"><span class="note-msg">${esc(n.msg)}</span>${n.code || n.file ? `<span class="note-ref">${n.code ? `<span>${esc(n.code)}</span>` : ''}${n.file ? `<span>${esc(n.file)}</span>` : ''}</span>` : ''}</div>
-</li>`).join('') + '</ul>';
-      if (visible.length < shown.length) {
-        html += `<div class="more"><button class="btn btn-sec btn-link" type="button" data-showall="1" data-key="showall">Show all ${shown.length} notes</button></div>`;
+      const shown = sortedNotes(notes.filter(n => ui.filter === 'all' || n.sev === ui.filter));
+      // In the "All" view, the Bv2.1 issues and warnings stay folded until asked for.
+      const fold = ui.filter === 'all' ? shown.filter(n => FOLDED[n.sev]) : [];
+      const head = fold.length ? shown.filter(n => !FOLDED[n.sev]) : shown;
+      const list = ui.showFolded ? head.concat(fold) : head;
+      const visible = ui.showAll ? list : list.slice(0, NOTE_PAGE);
+      html += notesHtml(visible.slice(0, head.length));
+      if (fold.length) html += foldHtml(fold);
+      html += notesHtml(visible.slice(head.length));
+      if (visible.length < list.length) {
+        html += `<div class="more"><button class="btn btn-sec btn-link" type="button" data-showall="1" data-key="showall">Show all ${list.length} notes</button></div>`;
       }
     }
   }
   return html + '</div>';
+}
+
+function sortedNotes(notes) {
+  const rank = n => n.sev in SEV_ORDER ? SEV_ORDER[n.sev] : 0;
+  return notes.slice().sort((a, b) => rank(a) - rank(b));
+}
+
+function notesHtml(notes) {
+  if (!notes.length) return '';
+  return '<ul class="notes">' + notes.map(n => `<li>
+<span class="sev ${esc(n.sev)}" title="${esc(SEV[n.sev] ? SEV[n.sev].title : '')}">${esc(SEV[n.sev] ? SEV[n.sev].label : n.sev)}</span>
+<div class="note-body"><span class="note-msg">${esc(n.msg)}</span>${n.code || n.file ? `<span class="note-ref">${n.code ? `<span>${esc(n.code)}</span>` : ''}${n.file ? `<span>${esc(n.file)}</span>` : ''}</span>` : ''}</div>
+</li>`).join('') + '</ul>';
+}
+
+// The button that shows or hides the Bv2.1 issues and warnings.
+function foldHtml(fold) {
+  const bv21 = fold.filter(n => n.sev === 'bv21').length;
+  const warn = fold.length - bv21;
+  const what = [bv21 ? plural(bv21, 'Bv2.1 issue', 'Bv2.1 issues') : '', warn ? plural(warn, 'warning', 'warnings') : ''].filter(Boolean).join(' and ');
+  const label = (ui.showFolded ? 'Hide ' : 'Show ') + what;
+  return `<div class="more fold"><button class="btn btn-sec btn-link" type="button" data-fold="1" data-key="fold" aria-expanded="${ui.showFolded}">${ICON_CHEVRON}${esc(label)}</button></div>`;
 }
 
 // Refocusing must never scroll: the page is redrawn every second while a
@@ -430,7 +465,7 @@ document.addEventListener('click', async ev => {
     await api('/api/rescan', 'POST').catch(() => {});
     setTimeout(refresh, 300);
   } else if (t.dataset.select) {
-    if (ui.selected !== t.dataset.select) { ui.filter = 'all'; ui.showAll = false; }
+    if (ui.selected !== t.dataset.select) { ui.filter = 'all'; ui.showAll = false; ui.showFolded = false; }
     ui.selected = t.dataset.select;
     save('selected', ui.selected);
     render();
@@ -442,6 +477,7 @@ document.addEventListener('click', async ev => {
     save('selected', ui.selected);
     ui.filter = 'all';
     ui.showAll = false;
+    ui.showFolded = false;
     t.disabled = true;
     await api('/api/dcp/' + encodeURIComponent(t.dataset.verify) + '/verify', 'POST').catch(() => {});
     refresh();
@@ -452,6 +488,9 @@ document.addEventListener('click', async ev => {
   } else if (t.dataset.filter) {
     ui.filter = t.dataset.filter;
     ui.showAll = false;
+    render();
+  } else if (t.dataset.fold) {
+    ui.showFolded = !ui.showFolded;
     render();
   } else if (t.dataset.showall) {
     ui.showAll = true;

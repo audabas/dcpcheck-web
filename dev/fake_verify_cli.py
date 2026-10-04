@@ -46,7 +46,10 @@ for f in sorted(os.listdir(dcp)):
 print("Checking subtitles", flush=True)
 time.sleep(0.3 / speed)
 
+# Like the real verifier, notes come in the order they are found, not by severity.
 notes = []
+if "WARN" in fake or "ERR" in fake:
+    notes.append("Warning: At least one frame of the picture asset j2c_video.mxf is close to the limit of 250Mbit/s.")
 if "ERR" in fake:
     notes.append("Error: The hash (QzW2nUJ6XzA8Kz/fT1Rc3h9YbQo=) of the picture asset j2c_video.mxf does not agree with the PKL file (8sVq0pL2mWc4Jd7kHxN5uZr1EyA=).")
 if "MINOR" in fake:
@@ -55,8 +58,6 @@ if "MINOR" in fake:
 if "IOP" in fake:
     notes.append("Bv2.1 error: The DCP is Interop.  Bv2.1 requires SMPTE.")
     notes.append("Bv2.1 error: The subtitle asset sub.xml has no <Language> tag.")
-if "WARN" in fake or "ERR" in fake:
-    notes.append("Warning: At least one frame of the picture asset j2c_video.mxf is close to the limit of 250Mbit/s.")
 for n in notes:
     print(n)
 if not notes:

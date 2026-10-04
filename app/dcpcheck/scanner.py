@@ -1,7 +1,8 @@
 """Find DCPs under a directory and read a few facts from their CPL.
 
 This is only used to show a summary in the UI (type, standard, picture,
-duration, sound, size). The actual verification is done by DCP-o-matic.
+duration, sound, size, whether a KDM is needed). The actual verification is
+done by DCP-o-matic.
 """
 
 import hashlib
@@ -206,6 +207,18 @@ def find_xml(path, kind):
     return found
 
 
+def encrypted(cpls):
+    """True if a CPL lists an encrypted asset, which only plays with a KDM.
+
+    SMPTE and Interop CPLs both give each encrypted reel asset a <KeyId>."""
+    for cpl in cpls:
+        reels = child(cpl, "ReelList")
+        for el in reels.iter() if reels is not None else []:
+            if local(el.tag) == "KeyId" and (el.text or "").strip():
+                return True
+    return False
+
+
 def standard_of(path, cpl):
     if cpl is not None:
         ns = cpl.tag[1:].split("}")[0] if cpl.tag.startswith("{") else ""
@@ -340,4 +353,6 @@ def read_facts(path, name):
     elif stereo:
         facts["picture"] = "3D"
     facts["sound"] = sound or sound_from_name(name)
-    return {k: v for k, v in facts.items() if v}
+    facts = {k: v for k, v in facts.items() if v}
+    facts["kdm"] = encrypted(cpls)
+    return facts

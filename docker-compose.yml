@@ -20,4 +20,6 @@ services:
       # - PGID=100
       # Optional: extra options passed to dcpomatic2_verify_cli.
       # - VERIFY_ARGS=--no-asset-hash-check
+      # Optional: your servers, to check that KDMs are made for them (see README).
+      # - "KDM_SERVERS=Salle 1=SM.ws-123456.DOREMI.DCP2000; Salle 2=SM.ws-654321.DOREMI.DCP2000"
     restart: unless-stopped

@@ -181,6 +181,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .dragging .kdm-card { border: 1px dashed var(--accent); background: var(--panel-sel); }
 .kdm-busy { display: inline-flex; align-items: center; gap: 10px; color: var(--muted); }
 .kdms { margin-top: 14px; }
+.kdm-card .sev { min-width: 134px; }
 .kdm-facts { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 13px; color: var(--muted); }
 .kdm-other { font-size: 14px; color: var(--muted); word-break: break-word; }
 .link { padding: 0; background: none; border: 0; color: var(--accent); font-family: var(--mono); font-size: 13px; text-align: left; text-decoration: underline; word-break: break-all; cursor: pointer; }

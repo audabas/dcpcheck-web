@@ -77,9 +77,40 @@ def timestamp(s):
     return t.timestamp() if t.tzinfo else None
 
 
-def common_name(subject):
-    m = re.search(r"(?:^|,)\s*CN=((?:[^,\\]|\\.)+)", subject or "")
-    return m.group(1).strip() if m else None
+def dn_fields(subject):
+    """The attributes of a distinguished name such as
+    "dnQualifier=8Kq\\+ZJ1n=,CN=SM.ws-1234.DOREMI,O=...", by lower-case name."""
+    fields = {}
+    for part in re.findall(r"(?:[^,\\]|\\.)+", subject or ""):
+        name, _, value = part.partition("=")
+        value = re.sub(r"\\(.)", r"\1", value.strip())
+        fields.setdefault(name.strip().lower(), value)
+    return fields
+
+
+def parse_servers(spec):
+    """Read KDM_SERVERS: "Screen 1=SM.ws-1234.DOREMI; Screen 2=..." gives
+    [(name, value)]. A value is the CN or the dnQualifier of a server's
+    certificate, with or without "CN=" or "dnQualifier=" before it. A name
+    may come back, for a renewed certificate say, or be left out."""
+    servers = []
+    for entry in re.split(r"[;\n]", spec or ""):
+        # The first "=" ends the name: a dnQualifier may end with "=".
+        name, _, value = entry.partition("=")
+        if not value.strip() or name.strip().lower() in ("cn", "dnqualifier"):
+            name, value = "", entry
+        value = re.sub(r"(?i)^\s*(cn|dnqualifier)\s*=", "", value).strip()
+        if value:
+            servers.append((name.strip() or value, value))
+    return servers
+
+
+def server_of(kdm, servers):
+    """The name of the server of KDM_SERVERS the KDM was made for, or None."""
+    for name, value in servers:
+        if (kdm["recipient"] and value.casefold() == kdm["recipient"].casefold()) or value == kdm["dn_qualifier"]:
+            return name
+    return None
 
 
 def parse(data):
@@ -96,7 +127,7 @@ def parse(data):
     ext = child(child(pub, "RequiredExtensions"), "KDMRequiredExtensions")
     if ext is None:
         raise NotKdm("a security message but not a KDM")
-    recipient = text(child(ext, "Recipient"), "X509SubjectName")
+    subject = dn_fields(text(child(ext, "Recipient"), "X509SubjectName"))
     keys = []
     key_list = child(ext, "KeyIdList")
     for el in key_list.iter() if key_list is not None else []:
@@ -110,20 +141,24 @@ def parse(data):
         "title": text(ext, "ContentTitleText"),
         "not_before": timestamp(text(ext, "ContentKeysNotValidBefore")),
         "not_after": timestamp(text(ext, "ContentKeysNotValidAfter")),
-        "recipient": common_name(recipient) or recipient,
+        "recipient": subject.get("cn"),
+        "dn_qualifier": subject.get("dnqualifier"),
         "device": text(child(ext, "AuthorizedDeviceInfo"), "DeviceListDescription"),
         "key_ids": keys,
     }
 
 
-def check(kdm, cpls, now):
-    """Compare a KDM with the CPLs of a DCP (see scanner.read_cpls).
+def check(kdm, cpls, now, servers=()):
+    """Compare a KDM with the CPLs of a DCP (see scanner.read_cpls), and
+    with the servers of KDM_SERVERS when there are any.
 
-    The verdict is the worst of: other (made for another CPL), keys (some
-    keys of the CPL are missing), expired, unknown (no valid dates), not_yet
-    (not valid yet) and ok."""
+    The verdict is the worst of: other (made for another CPL), server (made
+    for a server that is not in the list), keys (some keys of the CPL are
+    missing), expired, unknown (no valid dates), not_yet (not valid yet)
+    and ok."""
     res = {k: v for k, v in kdm.items() if k != "key_ids"}
     res["keys"] = len(kdm["key_ids"])
+    res["server"] = server_of(kdm, servers)
     cpl = next((c for c in cpls if c["id"] and c["id"] == kdm["cpl_id"]), None)
     if cpl is None:
         res["verdict"] = "other"
@@ -132,7 +167,9 @@ def check(kdm, cpls, now):
     res["cpl_title"] = cpl["title"]
     res["needed"] = len(cpl["key_ids"])
     res["missing"] = sum(1 for k in cpl["key_ids"] if k not in have)
-    if res["missing"]:
+    if servers and res["server"] is None:
+        res["verdict"] = "server"
+    elif res["missing"]:
         res["verdict"] = "keys"
     elif kdm["not_before"] is None or kdm["not_after"] is None:
         res["verdict"] = "unknown"

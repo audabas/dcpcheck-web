@@ -291,6 +291,7 @@ class Manager:
                 "now": time.time(),
                 "verifier": self.cfg.verifier_version,
                 "auto_verify": self.cfg.auto_verify,
+                "kdm_servers": sorted({n for n, _ in self.cfg.kdm_servers}),
                 "dcps": [self.summary(d) for d in self.dcps.values()],
             }
 
@@ -335,7 +336,7 @@ class Manager:
             except kdm.NotKdm as e:
                 skipped.append((fname, str(e)))
                 continue
-            res = kdm.check(k, cpls, now)
+            res = kdm.check(k, cpls, now, self.cfg.kdm_servers)
             res["file"] = fname
             if res["verdict"] == "other":
                 if library is None:  # CPL id -> (DCP, its CPLs)
@@ -345,7 +346,7 @@ class Manager:
                         library.update((c["id"], (o, o_cpls)) for c in o_cpls)
                 o, o_cpls = library.get(k["cpl_id"], (None, None))
                 if o is not None:
-                    other = kdm.check(k, o_cpls, now)
+                    other = kdm.check(k, o_cpls, now, self.cfg.kdm_servers)
                     other["file"] = fname
                     res["other"] = {"id": o.id, "relpath": o.relpath, "check": other}
             found.append(res)

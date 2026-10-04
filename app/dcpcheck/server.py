@@ -12,10 +12,11 @@ import shlex
 import shutil
 import threading
 import urllib.parse
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from .kdm import parse_servers
 from .manager import Manager
 
 STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
@@ -40,6 +41,7 @@ class Config:
     host: str
     port: int
     verifier_version: str
+    kdm_servers: list = field(default_factory=list)  # [(name, CN or dnQualifier)]
 
     @classmethod
     def from_env(cls):
@@ -66,6 +68,7 @@ class Config:
             host=e("HOST", "0.0.0.0"),
             port=int(e("PORT", "8080")),
             verifier_version=version,
+            kdm_servers=parse_servers(e("KDM_SERVERS", "")),
         )
 
 
@@ -178,6 +181,8 @@ def main():
     cfg = Config.from_env()
     if not shutil.which(cfg.verifier):
         print(f"warning: verifier '{cfg.verifier}' not found on PATH", flush=True)
+    if cfg.kdm_servers:
+        print("KDMs are checked against these servers: " + ", ".join(f"{n} ({v})" if n != v else v for n, v in cfg.kdm_servers), flush=True)
     if not os.path.isdir(cfg.dcp_root):
         print(f"warning: DCP directory '{cfg.dcp_root}' does not exist; mount your DCPs there", flush=True)
     manager = Manager(cfg)

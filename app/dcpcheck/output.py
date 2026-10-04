@@ -7,7 +7,7 @@ The verifier prints three kinds of things on stdout:
 * at the end, one line per note, e.g. "Error: The hash of ... is incorrect."
 
 Errors are then sorted into critical ones, which may stop the DCP from being
-ingested or played, and minor ones (XML schema, metadata, subtitles), which
+ingested or played, and minor ones (XML schema, metadata), which
 a server should not mind. See classify().
 
 The exact wording changes between versions, so everything here is tolerant:
@@ -45,15 +45,8 @@ MINOR_ERRORS = [
     ("MISSING_CPL_CONTENT_VERSION", r"^The CPL .* has no <ContentVersion> tag"),
     ("UNEXPECTED_DURATION", r"^There is an? <Duration> node inside a <MainMarkers>"),
     ("UNEXPECTED_ENTRY_POINT", r"^There is an? <EntryPoint> node inside a <MainMarkers>"),
-    # Subtitles and closed captions: picture and sound play, the text may be off.
-    ("EMPTY_TEXT", r"^There is an empty <Text> node in a subtitle"),
-    ("INCORRECT_CLOSED_CAPTION_ORDERING", r"^Some closed captions are not listed in the order"),
-    ("MISMATCHED_CLOSED_CAPTION_VALIGN", r"have different vertical alignments within a <Subtitle>"),
-    ("MISSING_FONT", r"^The font file for font ID"),
-    ("MISSING_LOAD_FONT", r"has <Text> nodes but no <LoadFont> node"),
-    ("MISSING_LOAD_FONT_FOR_FONT", r"does not have a corresponding <LoadFont> node"),
-    ("MISSING_SUBTITLE", r"^The subtitle asset .* has no subtitles"),
-    ("SUBTITLE_OVERLAPS_REEL_BOUNDARY", r"^At least one subtitle extends outside of its reel"),
+    # Subtitle and closed caption errors stay critical: a screening of a
+    # subtitled film can't go on without its subtitles.
 ]
 MINOR_ERRORS = [(code, re.compile(rx)) for code, rx in MINOR_ERRORS]
 # Xerces' words for a file that is not even well-formed XML.

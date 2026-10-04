@@ -26,7 +26,7 @@ const SORTS = {
 };
 const SEV = {
   error: { label: 'Critical', title: 'May stop the DCP from being ingested or played' },
-  minor: { label: 'Minor error', title: 'An error in the XML, the metadata or the subtitles that should not stop the DCP from playing' },
+  minor: { label: 'Minor error', title: 'An error in the XML or the metadata that should not stop the DCP from playing' },
   bv21: { label: 'Bv2.1', title: 'Not compliant with the ISDCF Bv2.1 recommendations' },
   warn: { label: 'Warning', title: 'Worth checking, should not block playback' }
 };
@@ -292,9 +292,9 @@ function resultHtml(d, res) {
       const found = [c.bv21 ? plural(c.bv21, 'Bv2.1 issue', 'Bv2.1 issues') : '', c.warn ? plural(c.warn, 'warning', 'warnings') : ''].filter(Boolean).join(' and ');
       html += `<div class="banner ok">${ICON_OK}<div><b>OK: no errors</b><span>DCP-o-matic found no error in this DCP, only ${esc(found)}, listed below. They are worth a look but should not stop it from playing.</span></div></div>`;
     } else if (res.status === 'minor') {
-      html += `<div class="banner minor">${ICON_MINOR}<div><b>Should play: minor errors only</b><span>DCP-o-matic found ${esc(plural(c.minor, 'error', 'errors'))} in the XML, the metadata or the subtitles, but no critical one. Servers should accept this DCP; check the subtitles if any are listed, and tell whoever made it.</span></div></div>`;
+      html += `<div class="banner minor">${ICON_MINOR}<div><b>Should play: minor errors only</b><span>DCP-o-matic found ${esc(plural(c.minor, 'error', 'errors'))} in the XML or the metadata, but no critical one. Servers should accept this DCP; tell whoever made it.</span></div></div>`;
     } else if (res.status === 'error') {
-      html += `<div class="banner bad">${ICON_BAD}<div><b>${esc(plural(c.error, 'critical error', 'critical errors'))}</b><span>This DCP may fail to ingest or to play: missing or damaged files, wrong hashes, invalid picture or sound. Check it before the screening.</span></div></div>`;
+      html += `<div class="banner bad">${ICON_BAD}<div><b>${esc(plural(c.error, 'critical error', 'critical errors'))}</b><span>This DCP may fail to ingest or to play: missing or damaged files, wrong hashes, invalid picture, sound or subtitles. Check it before the screening.</span></div></div>`;
     }
   }
 

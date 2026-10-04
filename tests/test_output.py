@@ -30,6 +30,9 @@ class Classify(unittest.TestCase):
             "Frame 1 (timecode 00:00:00:01) has an invalid JPEG2000 codestream (bad marker).",
             "Something new that dcpcheck has never seen.",
             "An XML file is badly formed: expected end of tag 'Id' (cpl.xml:12)",
+            'The font file for font ID "f" was not found, or was not referred to in the ASSETMAP.',
+            "At least one subtitle extends outside of its reel.",
+            "The subtitle asset 123 has no subtitles.",
         ):
             self.assertEqual(parse_note("Error: " + msg)["sev"], "error", msg)
 
@@ -39,8 +42,7 @@ class Classify(unittest.TestCase):
             "'(Id,AnnotationText?,VolumeCount,IssueDate,Issuer,Creator,AssetList)' (ASSETMAP:84)",
             "<ContentKind> has an invalid value foo.",
             "The CPL 123 has no <ContentVersion> tag",
-            'The font file for font ID "f" was not found, or was not referred to in the ASSETMAP.',
-            "At least one subtitle extends outside of its reel.",
+            "There is an <EntryPoint> node inside a <MainMarkers>.",
         ):
             self.assertEqual(parse_note("Error: " + msg)["sev"], "minor", msg)
 

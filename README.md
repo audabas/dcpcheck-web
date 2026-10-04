@@ -40,6 +40,8 @@ it and shows what it says. If this project is useful to you, consider
   (SMPTE/Interop), picture container, duration, sound, size, and whether
   it needs a **KDM** (it does when the CPL lists encrypted assets). Encrypted
   DCPs carry a *KDM* flag in the list.
+- Checks KDMs against an encrypted DCP: drop KDM files, or a ZIP of KDMs,
+  on the page (see [Checking KDMs](#checking-kdms)).
 - Sorts the list by name, size, status or date of last change.
 - Runs `dcpomatic2_verify_cli` on demand, one DCP at a time (the others wait
   in a queue), with live progress and a Cancel button.
@@ -181,6 +183,7 @@ proxy with an access-control profile.
 - `app/dcpcheck/manager.py` keeps the queue and runs
   `dcpomatic2_verify_cli [VERIFY_ARGS] -o report.html <DCP>` for each
   verification.
+- `app/dcpcheck/kdm.py` reads KDMs and compares them with the CPLs of a DCP.
 - `app/dcpcheck/output.py` reads the verifier's output: stages, progress
   bar, and lines starting with `Error:`, `Bv2.1 error:` or `Warning:`. It
   also tells critical errors from minor ones.
@@ -210,6 +213,32 @@ when its copy is complete, if it is still arriving). The DCPs already there
 when dcpcheck first starts are not: verify them by hand. dcpcheck keeps the
 list of the DCPs it has seen in `/data/known.json` and never forgets one, so
 a share that was unmounted for a while doesn't get verified again in full.
+
+### Checking KDMs
+
+When the selected DCP needs a KDM, a **KDM** card lets you check the KDMs
+you received: click *Check KDMs…* or drop the files anywhere on the page.
+Send `.xml` KDMs, or the ZIP the distributor sent, as it is (ZIPs inside a
+ZIP are opened too). The files are read on the server and forgotten after
+the check: dcpcheck doesn't keep them, and the results stay only until you
+reload the page.
+
+A KDM can't be opened outside the server it was made for: its keys are
+encrypted for that server's certificate. dcpcheck reads the public part of
+each KDM and tells you:
+
+- whether it was made for the composition (CPL) of this DCP, so for this
+  version of the film. A KDM made for another version, even with the same
+  title, won't play this one. If the KDM is for another DCP of your library,
+  dcpcheck says which one, and shows the result on that DCP as well;
+- whether it carries the ids of all the keys that the CPL's encrypted
+  assets need;
+- when it is valid, and whether it is valid now, expired or not valid yet;
+- which server it was made for (the name in its certificate, and the
+  screen given by whoever made it).
+
+It does not check the KDM's signature, nor that it was made for one of
+*your* servers: only the server can tell.
 
 ### Critical and minor errors
 
@@ -257,6 +286,14 @@ rescan:
 
 ```sh
 python3 dev/simulate_copy.py sample-dcps/Films/Arriving_FTR_2K_SMPTE_OV 20MB 30
+```
+
+To try the KDM check, make a ZIP of fake KDMs for the encrypted sample
+DCPs (made for each screen, expired, not valid yet, missing a key, for
+another version), and drop it on the page:
+
+```sh
+python3 dev/make_sample_kdms.py sample-dcps sample-kdms.zip
 ```
 
 Tests use only the standard library:

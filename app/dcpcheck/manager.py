@@ -11,7 +11,7 @@ import threading
 import time
 from collections import deque
 
-from . import scanner
+from . import kdm, scanner
 from .output import OutputParser, counts_of, reclassify, status_of
 
 
@@ -311,6 +311,49 @@ class Manager:
             return live
         p = self.path("logs", dcp_id + ".log")
         return p if os.path.isfile(p) else None
+
+    # ---- KDMs ------------------------------------------------------------
+
+    def check_kdms(self, dcp_id, name, data):
+        """Check the KDMs of an upload (KDM files or a ZIP) against a DCP.
+
+        A KDM made for another DCP of the library says which one, with the
+        result of the check against it."""
+        with self.lock:
+            d = self.dcps.get(dcp_id)
+            others = [o for o in self.dcps.values() if o is not d and o.facts.get("kdm")]
+        if d is None:
+            return None
+        files, skipped = kdm.unpack(name, data)
+        cpls = scanner.read_cpls(d.path)
+        library = None
+        now = time.time()
+        found = []
+        for fname, content in files:
+            try:
+                k = kdm.parse(content)
+            except kdm.NotKdm as e:
+                skipped.append((fname, str(e)))
+                continue
+            res = kdm.check(k, cpls, now)
+            res["file"] = fname
+            if res["verdict"] == "other":
+                if library is None:  # CPL id -> (DCP, its CPLs)
+                    library = {}
+                    for o in others:
+                        o_cpls = scanner.read_cpls(o.path)
+                        library.update((c["id"], (o, o_cpls)) for c in o_cpls)
+                o, o_cpls = library.get(k["cpl_id"], (None, None))
+                if o is not None:
+                    other = kdm.check(k, o_cpls, now)
+                    other["file"] = fname
+                    res["other"] = {"id": o.id, "relpath": o.relpath, "check": other}
+            found.append(res)
+        return {
+            "kdms": found,
+            "skipped": [{"file": f, "reason": r} for f, r in skipped],
+            "cpls": [{"id": c["id"], "title": c["title"]} for c in cpls],
+        }
 
     # ---- jobs ------------------------------------------------------------
 

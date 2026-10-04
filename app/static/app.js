@@ -38,6 +38,16 @@ const AUTO_STARTED = { copy: 'Started by itself at the end of the copy.', new: '
 const AUTO_RESULT = { copy: 'started after the copy', new: 'started for a new DCP' };
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const NOTE_PAGE = 200;
+// What a checked KDM is, best first.
+const KDM_VERDICT = {
+  ok: { label: 'OK', cls: 'ok' },
+  not_yet: { label: 'Not valid yet', cls: 'warn' },
+  unknown: { label: 'No valid dates', cls: 'warn' },
+  expired: { label: 'Expired', cls: 'error' },
+  keys: { label: 'Keys missing', cls: 'error' },
+  other: { label: 'Not for this DCP', cls: 'error' }
+};
+const KDM_ORDER = Object.keys(KDM_VERDICT);
 
 const ui = {
   state: null,
@@ -49,6 +59,9 @@ const ui = {
   reverse: load('reverse') === '1',
   detail: null,      // full detail (with notes) of the selected DCP
   detailKey: null,   // what that detail was fetched for
+  kdm: {},           // DCP id -> KDMs checked against it in this page
+  kdmTarget: null,   // DCP the file picker was opened for
+  showOtherKdms: false, // KDMs made for other DCPs unfolded
   clockSkew: 0
 };
 
@@ -204,6 +217,7 @@ function emptyListHtml(s) {
 const ICON_SPIN = '<svg class="spin" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6" opacity=".25"></circle><path d="M14 8a6 6 0 0 0-6-6"></path></svg>';
 const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.8v10.4a.6.6 0 0 0 .9.5l8.4-5.2a.6.6 0 0 0 0-1L3.9 1.3a.6.6 0 0 0-.9.5z"></path></svg>';
 const ICON_KEY = '<svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.8" cy="8.2" r="2.3"></circle><path d="M5.5 6.5L10.5 1.5M8.5 3.5l1.5 1.5"></path></svg>';
+const ICON_KEY_BIG = '<svg width="16" height="16" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="3.8" cy="8.2" r="2.3"></circle><path d="M5.5 6.5L10.5 1.5M8.5 3.5l1.5 1.5"></path></svg>';
 const ICON_CHEVRON = '<svg class="chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5L8 6l-3.5 3.5"></path></svg>';
 const ICON_OK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#74D3AE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
 const ICON_BAD = iconAlert('#FF8A7A');
@@ -234,6 +248,7 @@ ${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span
 </div>
 <dl class="facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === '' ? '—' : v)}</dd></div>`).join('')}</dl>
 </div>`;
+  if (f.kdm) html += kdmCardHtml(d);
 
   html += `<div class="card verif"><div class="verif-head">
 <div style="display: flex; flex-direction: column; gap: 4px">
@@ -335,6 +350,108 @@ function resultHtml(d, res) {
     }
   }
   return html + '</div>';
+}
+
+// ---- KDMs ----------------------------------------------------------------
+
+function kdmCardHtml(d) {
+  const k = ui.kdm[d.id] || { items: [], skipped: [], errors: [], busy: 0 };
+  const items = k.items.slice().sort((a, b) => KDM_ORDER.indexOf(a.verdict) - KDM_ORDER.indexOf(b.verdict) || a.file.localeCompare(b.file, undefined, { numeric: true }));
+  const mine = items.filter(r => r.verdict !== 'other');
+  let html = `<div class="card verif kdm-card" data-kdm-drop="${esc(d.id)}"><div class="verif-head">
+<div style="display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 280px">
+<h3>KDM</h3>
+<span class="hint">Drop KDM files or a ZIP of KDMs here to check that they were made for this version of the DCP. Only their public part is read: the keys themselves can only be opened by the server they were made for.</span>
+</div><div class="verif-actions">`;
+  if (items.length || k.skipped.length || k.errors.length) html += `<button class="btn btn-sec" type="button" data-kdm-clear="${esc(d.id)}" data-key="kdm-clear">Clear</button>`;
+  html += `<button class="btn btn-pri" type="button" data-kdm-pick="${esc(d.id)}" data-key="kdm-pick">${ICON_KEY_BIG}Check KDMs…</button></div></div>`;
+
+  if (k.busy) html += `<div class="running"><span class="running-stage kdm-busy">${ICON_SPIN}Reading ${esc(plural(k.busy, 'file', 'files'))}…</span></div>`;
+  if (items.length) {
+    const ok = mine.filter(r => r.verdict === 'ok').length;
+    let summary;
+    if (!mine.length) summary = items.length === 1 ? 'This KDM was not made for this DCP.' : `None of these ${items.length} KDMs was made for this DCP.`;
+    else summary = `${plural(mine.length, 'KDM', 'KDMs')} for this DCP, ${ok} valid now` + (items.length > mine.length ? `, and ${plural(items.length - mine.length, 'KDM', 'KDMs')} for other DCPs.` : '.');
+    html += `<div class="result-head"><span class="eyebrow">Checked KDMs</span><span class="when">${esc(summary)}</span></div>`;
+    // KDMs made for other DCPs (a ZIP often holds several films) stay folded.
+    const others = items.filter(r => r.verdict === 'other');
+    if (mine.length) html += '<ul class="notes kdms">' + mine.map(r => kdmItemHtml(d, r)).join('') + '</ul>';
+    if (others.length) {
+      const label = (ui.showOtherKdms ? 'Hide ' : 'Show ') + plural(others.length, 'KDM', 'KDMs') + ' for other DCPs';
+      html += `<div class="more fold"><button class="btn btn-sec btn-link" type="button" data-kdm-fold="1" data-key="kdm-fold" aria-expanded="${ui.showOtherKdms}">${ICON_CHEVRON}${esc(label)}</button></div>`;
+      if (ui.showOtherKdms) html += '<ul class="notes">' + others.map(r => kdmItemHtml(d, r)).join('') + '</ul>';
+    }
+  }
+  const problems = k.errors.map(e => esc(e)).concat(k.skipped.map(s => `<span class="mono">${esc(s.file)}</span>: ${esc(s.reason)}`));
+  if (problems.length) {
+    html += `<div class="more kdm-skipped"><span class="hint">${problems.length === 1 ? 'Not checked' : esc(plural(problems.length, 'file', 'files')) + ' not checked'}:</span><ul>${problems.map(p => `<li class="hint">${p}</li>`).join('')}</ul></div>`;
+  }
+  return html + '</div>';
+}
+
+function kdmItemHtml(d, r) {
+  const v = KDM_VERDICT[r.verdict] || KDM_VERDICT.other;
+  const from = r.not_before ? fmtDate(r.not_before) : '?';
+  const to = r.not_after ? fmtDate(r.not_after) : '?';
+  let msg;
+  if (r.verdict === 'ok') msg = 'Made for this DCP, valid until ' + to + '.';
+  else if (r.verdict === 'not_yet') msg = 'Made for this DCP, but valid only from ' + from + '.';
+  else if (r.verdict === 'unknown') msg = 'Made for this DCP, but its dates of validity can’t be read.';
+  else if (r.verdict === 'expired') msg = 'Made for this DCP, but it expired on ' + to + '.';
+  else if (r.verdict === 'keys') msg = 'Made for this DCP, but ' + (r.missing === r.needed ? (r.needed === 1 ? 'the key it needs is' : 'all the keys it needs are') : r.missing + ' of the ' + r.needed + ' keys it needs ' + (r.missing === 1 ? 'is' : 'are')) + ' missing: the DCP won’t play.';
+  else if (r.other) msg = 'Made for another DCP of this library:';
+  else msg = 'Made for another composition (CPL), perhaps another version of the film' + (r.title ? ': “' + r.title + '”' : '') + '.';
+  let html = `<li>
+<span class="sev ${v.cls}">${esc(v.label)}</span>
+<div class="note-body"><span class="note-msg">${esc(msg)}</span>`;
+  if (r.other) {
+    const there = r.other.check.verdict === 'ok' ? '' : ' (' + ((KDM_VERDICT[r.other.check.verdict] || {}).label || '').toLowerCase() + ' for it)';
+    html += `<span class="kdm-other"><button class="link" type="button" data-select="${esc(r.other.id)}" data-key="kdm-other-${esc(r.message_id)}">${esc(r.other.relpath)}</button>${esc(there)}</span>`;
+  }
+  const facts = [];
+  if (r.recipient || r.device) facts.push('For ' + [r.device, r.recipient].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · '));
+  if (r.verdict !== 'other') facts.push('Valid ' + from + ' → ' + to);
+  if (facts.length) html += `<span class="kdm-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</span>`;
+  html += `<span class="note-ref"><span>${esc(r.file)}</span>${r.annotation && r.annotation !== r.title ? `<span>${esc(r.annotation)}</span>` : ''}<span title="Composition (CPL) the KDM is for">CPL ${esc(r.cpl_id || '?')}</span></span>`;
+  return html + '</div></li>';
+}
+
+function kdmState(id) {
+  return ui.kdm[id] || (ui.kdm[id] = { items: [], skipped: [], errors: [], busy: 0 });
+}
+
+// The same KDM checked twice replaces the first result.
+function addKdm(id, r) {
+  const k = kdmState(id);
+  const i = r.message_id ? k.items.findIndex(x => x.message_id === r.message_id) : -1;
+  if (i >= 0) k.items[i] = r; else k.items.push(r);
+}
+
+async function checkKdms(id, files) {
+  const k = kdmState(id);
+  k.busy += files.length;
+  render();
+  for (const file of files) {
+    try {
+      const r = await fetch('/api/dcp/' + encodeURIComponent(id) + '/kdm', {
+        method: 'POST',
+        headers: { 'X-Dcpcheck': '1', 'X-Filename': encodeURIComponent(file.name), 'Content-Type': 'application/octet-stream' },
+        body: file
+      });
+      if (!r.ok) throw new Error(r.status === 413 ? 'too large' : r.status + ' ' + r.statusText);
+      const res = await r.json();
+      for (const item of res.kdms) {
+        addKdm(id, item);
+        // Also shown on the DCP it was made for.
+        if (item.other) addKdm(item.other.id, item.other.check);
+      }
+      k.skipped = k.skipped.filter(s => !res.skipped.some(x => x.file === s.file)).concat(res.skipped);
+    } catch (e) {
+      k.errors.push(file.name + ': ' + (e.message || 'could not be sent'));
+    }
+    k.busy--;
+    render();
+  }
 }
 
 function sortedNotes(notes) {
@@ -465,7 +582,7 @@ document.addEventListener('click', async ev => {
     await api('/api/rescan', 'POST').catch(() => {});
     setTimeout(refresh, 300);
   } else if (t.dataset.select) {
-    if (ui.selected !== t.dataset.select) { ui.filter = 'all'; ui.showAll = false; ui.showFolded = false; }
+    if (ui.selected !== t.dataset.select) { ui.filter = 'all'; ui.showAll = false; ui.showFolded = false; ui.showOtherKdms = false; }
     ui.selected = t.dataset.select;
     save('selected', ui.selected);
     render();
@@ -495,7 +612,60 @@ document.addEventListener('click', async ev => {
   } else if (t.dataset.showall) {
     ui.showAll = true;
     render();
+  } else if (t.dataset.kdmPick) {
+    ui.kdmTarget = t.dataset.kdmPick;
+    document.getElementById('kdm-files').click();
+  } else if (t.dataset.kdmFold) {
+    ui.showOtherKdms = !ui.showOtherKdms;
+    render();
+  } else if (t.dataset.kdmClear) {
+    delete ui.kdm[t.dataset.kdmClear];
+    render();
   }
+});
+
+document.getElementById('kdm-files').addEventListener('change', ev => {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';
+  if (files.length && ui.kdmTarget) checkKdms(ui.kdmTarget, files);
+});
+
+// Files dropped anywhere on the page are checked against the selected DCP,
+// if it needs a KDM. Elsewhere, the browser must not open them.
+function kdmDropTarget() {
+  const d = ui.state && ui.state.dcps.find(x => x.id === ui.selected);
+  return d && d.facts && d.facts.kdm ? d.id : null;
+}
+function hasFiles(ev) {
+  return ev.dataTransfer && Array.from(ev.dataTransfer.types || []).indexOf('Files') >= 0;
+}
+let dragDepth = 0;
+function setDragging(on) {
+  document.body.classList.toggle('dragging', on && !!kdmDropTarget());
+}
+document.addEventListener('dragenter', ev => {
+  if (!hasFiles(ev)) return;
+  dragDepth++;
+  setDragging(true);
+});
+document.addEventListener('dragleave', ev => {
+  if (!hasFiles(ev)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) setDragging(false);
+});
+document.addEventListener('dragover', ev => {
+  if (!hasFiles(ev)) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = kdmDropTarget() ? 'copy' : 'none';
+});
+document.addEventListener('drop', ev => {
+  if (!hasFiles(ev)) return;
+  ev.preventDefault();
+  dragDepth = 0;
+  setDragging(false);
+  const id = kdmDropTarget();
+  const files = Array.from(ev.dataTransfer.files || []);
+  if (id && files.length) checkKdms(id, files);
 });
 
 document.getElementById('sort').addEventListener('change', ev => {

@@ -177,8 +177,28 @@ def text(el, name):
     return c.text.strip() if c is not None and c.text else None
 
 
+def uuid_of(s):
+    """A UUID without its urn:uuid: prefix, in lower case."""
+    s = (s or "").strip().lower()
+    return s[len("urn:uuid:"):] if s.startswith("urn:uuid:") else s
+
+
 def find_cpls(path):
     return find_xml(path, "CompositionPlaylist")
+
+
+def read_cpls(path):
+    """The CPLs of a folder: their id, their title and the ids of the keys
+    their encrypted assets need."""
+    out = []
+    for cpl in find_cpls(path):
+        reels = child(cpl, "ReelList")
+        keys = []
+        for el in reels.iter() if reels is not None else []:
+            if local(el.tag) == "KeyId" and (el.text or "").strip() and uuid_of(el.text) not in keys:
+                keys.append(uuid_of(el.text))
+        out.append({"id": uuid_of(text(cpl, "Id")), "title": text(cpl, "ContentTitleText"), "key_ids": keys})
+    return out
 
 
 def find_xml(path, kind):

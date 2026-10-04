@@ -11,6 +11,7 @@ import re
 import shlex
 import shutil
 import threading
+import urllib.parse
 from dataclasses import dataclass
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -18,7 +19,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from .manager import Manager
 
 STATIC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static")
-ROUTE = re.compile(r"^/api/dcp/([0-9a-f]{12})(?:/(verify|cancel|report|log))?$")
+ROUTE = re.compile(r"^/api/dcp/([0-9a-f]{12})(?:/(verify|cancel|report|log|kdm))?$")
+MAX_UPLOAD = 64 * 1024 * 1024  # KDMs come in ZIPs of a few MB at most
 
 
 @dataclass
@@ -151,7 +153,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_json({"ok": False, "error": "The DCP is still being copied."}, HTTPStatus.CONFLICT)
             ok = m.verify(dcp_id) if action == "verify" else m.cancel(dcp_id)
             return self.send_json({"ok": ok}, HTTPStatus.OK if ok else HTTPStatus.NOT_FOUND)
+        if r and r.group(2) == "kdm":
+            return self.check_kdms(r.group(1))
         self.send_error(HTTPStatus.NOT_FOUND)
+
+    def check_kdms(self, dcp_id):
+        """The body is one file: a KDM, or a ZIP of KDMs. Its name is in X-Filename."""
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            return self.send_error(HTTPStatus.LENGTH_REQUIRED)
+        if length < 0:
+            return self.send_error(HTTPStatus.BAD_REQUEST)
+        if length > MAX_UPLOAD:
+            self.close_connection = True
+            return self.send_json({"ok": False, "error": "The file is too large."}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
+        data = self.rfile.read(length)
+        name = urllib.parse.unquote(self.headers.get("X-Filename", "")) or "upload"
+        res = self.manager.check_kdms(dcp_id, os.path.basename(name), data)
+        return self.send_json(res) if res is not None else self.send_error(HTTPStatus.NOT_FOUND)
 
 
 def main():

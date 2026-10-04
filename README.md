@@ -107,6 +107,19 @@ If you want the files in `data/` to belong to your DSM user instead of root,
 uncomment `PUID`/`PGID` in `docker-compose.yml`. Run `id` over SSH to get your
 values (often `1026` and `100`).
 
+To update:
+
+1. Replace the files in the project folder with the new version. Keep the
+   `data/` folder and your own `docker-compose.yml`.
+2. In **Container Manager → Project**, select the project, stop it, then
+   **Action → Build** (**Créer** in French).
+
+`docker-compose.yml` sets `pull_policy: build`, so Build rebuilds the image.
+If you use your own compose file, add that line to the `dcpcheck` service.
+Without it, Container Manager starts the old image again, and you have to
+delete the `dcpcheck-web` image in **Container Manager → Image** before
+Build.
+
 Verification reads every byte of the DCP to check its hashes, so its speed
 depends on your disks. A feature can take 15 to 30 minutes on a typical NAS.
 This is why verifications run one at a time.

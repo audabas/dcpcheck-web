@@ -2,6 +2,9 @@ services:
   dcpcheck:
     build: .
     image: dcpcheck-web:latest
+    # Rebuild the image on every start, so that an update of the files is
+    # picked up (Container Manager would otherwise reuse the old image).
+    pull_policy: build
     container_name: dcpcheck
     ports:
       - "8080:8080"

@@ -65,6 +65,7 @@ class Parse(unittest.TestCase):
         self.assertEqual(k["key_ids"], KEYS)
         self.assertEqual(k["title"], "Film_FTR_F_FR-XX")
         self.assertEqual(k["recipient"], "SM.ws-1234.DOREMI.example")
+        self.assertEqual(k["dn_qualifier"], "abc,d=")
         self.assertEqual(k["device"], "Screen 2")
         self.assertEqual(k["annotation"], "Film :: Cinema :: Screen 2")
         self.assertEqual(k["message_id"], "0f1e2d3c-0000-4000-8000-000000000001")
@@ -94,6 +95,32 @@ class Check(unittest.TestCase):
         r = kdm.check(kdm.parse(make(keys=KEYS[:1])), CPLS, NOW)
         self.assertEqual((r["needed"], r["missing"], r["keys"]), (2, 1, 1))
         self.assertNotIn("key_ids", r)
+
+
+class Servers(unittest.TestCase):
+    def test_parse(self):
+        spec = "Salle 1=SM.ws-1234.DOREMI; Salle 1 = dnQualifier=8Kq+ZJ1n/w=\nCN=SM.x.IMB ;8Kq+ZJ1n=; ;Salle 2=CN=SM.y"
+        self.assertEqual(kdm.parse_servers(spec), [
+            ("Salle 1", "SM.ws-1234.DOREMI"), ("Salle 1", "8Kq+ZJ1n/w="), ("SM.x.IMB", "SM.x.IMB"),
+            ("8Kq+ZJ1n=", "8Kq+ZJ1n="), ("Salle 2", "SM.y"),
+        ])
+        self.assertEqual(kdm.parse_servers(""), [])
+
+    def check(self, servers, **kw):
+        return kdm.check(kdm.parse(make(**kw)), CPLS, NOW, kdm.parse_servers(servers))
+
+    def test_matches_the_cn_or_the_dn_qualifier(self):
+        r = self.check("Salle 1=sm.ws-1234.doremi.example")
+        self.assertEqual((r["verdict"], r["server"]), ("ok", "Salle 1"))
+        r = self.check("Salle 3=SM.ws-9; Salle 2=abc,d=")
+        self.assertEqual((r["verdict"], r["server"]), ("ok", "Salle 2"))
+
+    def test_not_one_of_ours(self):
+        r = self.check("Salle 3=SM.ws-9")
+        self.assertEqual((r["verdict"], r["server"]), ("server", None))
+        # The wrong DCP is worse; without servers, no opinion.
+        self.assertEqual(self.check("Salle 3=SM.ws-9", cpl="8a1b2c3d-0000-4000-8000-0000000000ff")["verdict"], "other")
+        self.assertEqual(self.check("")["verdict"], "ok")
 
 
 class Unpack(unittest.TestCase):
@@ -157,6 +184,19 @@ class Library(unittest.TestCase):
         self.assertEqual(other["other"]["check"]["verdict"], "ok")
         self.assertEqual(res["skipped"], [{"file": "kdms.zip › README.txt", "reason": "not an XML file"}])
         self.assertEqual(len(res["cpls"]), 1)
+
+    def test_servers(self):
+        self.m.cfg.kdm_servers = kdm.parse_servers("Salle 1=SM.salle1.IMB.example.com; Salle 2=sm.salle2.imb.example.com")
+        try:
+            with open(self.zip, "rb") as f:
+                res = self.m.check_kdms(self.dcp("Minuit").id, "kdms.zip", f.read())
+        finally:
+            self.m.cfg.kdm_servers = []
+        by_file = {r["file"].rsplit("/", 1)[-1]: r for r in res["kdms"]}
+        self.assertEqual(by_file["MinuitAuPort_Salle1.xml"]["server"], "Salle 1")
+        self.assertEqual(by_file["MinuitAuPort_Salle2.xml"]["verdict"], "ok")
+        self.assertEqual(by_file["MinuitAuPort_Salle3_expired.xml"]["verdict"], "server")
+        self.assertEqual(by_file["LeDernierQuai_Salle1.xml"]["other"]["check"]["server"], "Salle 1")
 
     def test_unknown_dcp(self):
         self.assertIsNone(self.m.check_kdms("000000000000", "a.xml", make()))

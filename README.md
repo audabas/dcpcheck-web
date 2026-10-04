@@ -140,6 +140,7 @@ Environment variables of the container:
 | `COPY_QUIET`     | `20`                    | Seconds without any change after which a folder being copied is considered complete. |
 | `COPY_POLL`      | `3`                     | Seconds between two measures of a folder being copied (for its speed). |
 | `AUTO_VERIFY`    | `1`                     | Verify new DCPs, and DCPs whose copy is complete, by itself. Set to `0` to turn it off. |
+| `KDM_SERVERS`    | *(empty)*               | Your servers, to check that KDMs are made for them: `Salle 1=<CN or dnQualifier>; Salle 2=...`. See [Checking KDMs](#checking-kdms). |
 | `VERIFY_ARGS`    | *(empty)*               | Extra options for `dcpomatic2_verify_cli`, e.g. `--no-asset-hash-check`. Run `docker exec dcpcheck dcpomatic2_verify_cli --help` for the list. |
 | `HTML_REPORT`    | `1`                     | Ask the verifier for its HTML report (`-o`). Set to `0` to turn it off. |
 | `PUID` / `PGID`  | *(empty: root)*         | Run as this user/group. |
@@ -235,10 +236,40 @@ each KDM and tells you:
   assets need;
 - when it is valid, and whether it is valid now, expired or not valid yet;
 - which server it was made for (the name in its certificate, and the
-  screen given by whoever made it).
+  screen given by whoever made it), and whether it is one of yours if you
+  list them in `KDM_SERVERS` (see below).
 
-It does not check the KDM's signature, nor that it was made for one of
-*your* servers: only the server can tell.
+It does not check the KDM's signature: only the server can tell that it
+will really open the keys.
+
+#### Your servers
+
+A KDM is made for one certificate: the one of the server's media block
+(not the projector's). The KDM names that certificate by its *CN*, which
+usually holds the model and serial number of the server, e.g.
+`SM.ws-123456.DOREMI.DCP2000`, and by its *dnQualifier*, a fingerprint of
+its public key, e.g. `8Kq+ZJ1nW3dP0sXoQf4xYzTb5aE=`.
+
+List your servers in `KDM_SERVERS`, separated by `;`, each one as
+`name=value` where the value is the CN or the dnQualifier of its
+certificate:
+
+```yaml
+environment:
+  - "KDM_SERVERS=Salle 1=SM.ws-123456.DOREMI.DCP2000; Salle 2=SM.ws-654321.DOREMI.DCP2000"
+```
+
+dcpcheck then tells which of your servers each KDM is for, and marks a KDM
+made for any other certificate as **Not your server**: one made for the old
+certificate of a server, say, or for another cinema. The easiest way to
+find the CN is to check a KDM that works on that server: the page shows it
+after *For*. The certificate file that you send to distributors has it too
+(`openssl x509 -in server.pem -noout -subject`).
+
+The CN usually stays the same when the certificate of a server is
+renewed, while the dnQualifier changes. Give the dnQualifier to be strict.
+A name may come back with several values, for an old and a new
+certificate for instance. A value can also come alone, without a name.
 
 ### Critical and minor errors
 

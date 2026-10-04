@@ -45,6 +45,7 @@ const KDM_VERDICT = {
   unknown: { label: 'No valid dates', cls: 'warn' },
   expired: { label: 'Expired', cls: 'error' },
   keys: { label: 'Keys missing', cls: 'error' },
+  server: { label: 'Not your server', cls: 'error' },
   other: { label: 'Not for this DCP', cls: 'error' }
 };
 const KDM_ORDER = Object.keys(KDM_VERDICT);
@@ -361,7 +362,7 @@ function kdmCardHtml(d) {
   let html = `<div class="card verif kdm-card" data-kdm-drop="${esc(d.id)}"><div class="verif-head">
 <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 280px">
 <h3>KDM</h3>
-<span class="hint">Drop KDM files or a ZIP of KDMs here to check that they were made for this version of the DCP. Only their public part is read: the keys themselves can only be opened by the server they were made for.</span>
+<span class="hint">Drop KDM files or a ZIP of KDMs here to check that they were made for this version of the DCP. Only their public part is read: the keys themselves can only be opened by the server they were made for.${ui.state.kdm_servers && ui.state.kdm_servers.length ? ' Your servers: ' + esc(ui.state.kdm_servers.join(', ')) + '.' : ''}</span>
 </div><div class="verif-actions">`;
   if (items.length || k.skipped.length || k.errors.length) html += `<button class="btn btn-sec" type="button" data-kdm-clear="${esc(d.id)}" data-key="kdm-clear">Clear</button>`;
   html += `<button class="btn btn-pri" type="button" data-kdm-pick="${esc(d.id)}" data-key="kdm-pick">${ICON_KEY_BIG}Check KDMs…</button></div></div>`;
@@ -393,12 +394,15 @@ function kdmItemHtml(d, r) {
   const v = KDM_VERDICT[r.verdict] || KDM_VERDICT.other;
   const from = r.not_before ? fmtDate(r.not_before) : '?';
   const to = r.not_after ? fmtDate(r.not_after) : '?';
+  // With KDM_SERVERS, the name of the server it was made for.
+  const made = 'Made for this DCP' + (r.server ? ' and ' + r.server : '');
   let msg;
-  if (r.verdict === 'ok') msg = 'Made for this DCP, valid until ' + to + '.';
-  else if (r.verdict === 'not_yet') msg = 'Made for this DCP, but valid only from ' + from + '.';
-  else if (r.verdict === 'unknown') msg = 'Made for this DCP, but its dates of validity can’t be read.';
-  else if (r.verdict === 'expired') msg = 'Made for this DCP, but it expired on ' + to + '.';
-  else if (r.verdict === 'keys') msg = 'Made for this DCP, but ' + (r.missing === r.needed ? (r.needed === 1 ? 'the key it needs is' : 'all the keys it needs are') : r.missing + ' of the ' + r.needed + ' keys it needs ' + (r.missing === 1 ? 'is' : 'are')) + ' missing: the DCP won’t play.';
+  if (r.verdict === 'ok') msg = made + ', valid until ' + to + '.';
+  else if (r.verdict === 'not_yet') msg = made + ', but valid only from ' + from + '.';
+  else if (r.verdict === 'unknown') msg = made + ', but its dates of validity can’t be read.';
+  else if (r.verdict === 'expired') msg = made + ', but it expired on ' + to + '.';
+  else if (r.verdict === 'server') msg = 'Made for this DCP, but for a server that is not one of yours' + (r.recipient ? ': ' + r.recipient : '') + '. Ask for a KDM made for your server’s certificate.';
+  else if (r.verdict === 'keys') msg = made + ', but ' + (r.missing === r.needed ? (r.needed === 1 ? 'the key it needs is' : 'all the keys it needs are') : r.missing + ' of the ' + r.needed + ' keys it needs ' + (r.missing === 1 ? 'is' : 'are')) + ' missing: the DCP won’t play.';
   else if (r.other) msg = 'Made for another DCP of this library:';
   else msg = 'Made for another composition (CPL), perhaps another version of the film' + (r.title ? ': “' + r.title + '”' : '') + '.';
   let html = `<li>
@@ -409,7 +413,8 @@ function kdmItemHtml(d, r) {
     html += `<span class="kdm-other"><button class="link" type="button" data-select="${esc(r.other.id)}" data-key="kdm-other-${esc(r.message_id)}">${esc(r.other.relpath)}</button>${esc(there)}</span>`;
   }
   const facts = [];
-  if (r.recipient || r.device) facts.push('For ' + [r.device, r.recipient].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · '));
+  if (r.server) facts.push('For ' + r.server + (r.recipient ? ' · ' + r.recipient : ''));
+  else if (r.recipient || r.device) facts.push('For ' + [r.device, r.recipient].filter(Boolean).filter((x, i, a) => a.indexOf(x) === i).join(' · '));
   if (r.verdict !== 'other') facts.push('Valid ' + from + ' → ' + to);
   if (facts.length) html += `<span class="kdm-facts">${facts.map(x => `<span>${esc(x)}</span>`).join('')}</span>`;
   html += `<span class="note-ref"><span>${esc(r.file)}</span>${r.annotation && r.annotation !== r.title ? `<span>${esc(r.annotation)}</span>` : ''}<span title="Composition (CPL) the KDM is for">CPL ${esc(r.cpl_id || '?')}</span></span>`;

@@ -104,8 +104,8 @@ With **Container Manager** (DSM 7.2 and later):
 4. Open `http://<nas-address>:8080`.
 
 If you want the files in `data/` to belong to your DSM user instead of root,
-uncomment `PUID`/`PGID` in `docker-compose.yml`. Run `id` over SSH to get your
-values (often `1026` and `100`).
+uncomment `environment:` and `PUID`/`PGID` in `docker-compose.yml`. Run `id`
+over SSH to get your values (often `1026` and `100`).
 
 To update:
 

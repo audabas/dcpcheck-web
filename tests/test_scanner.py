@@ -24,9 +24,9 @@ class Scanner(unittest.TestCase):
 
     def test_finds_dcps(self):
         dcps = scanner.find_dcps(self.tmp.name)
-        self.assertEqual(len(dcps), 4)
+        self.assertEqual(len(dcps), 5)
         self.assertTrue(all(d.relpath.startswith("Films/") for d in dcps))
-        self.assertEqual(len({d.id for d in dcps}), 4)
+        self.assertEqual(len({d.id for d in dcps}), 5)
 
     def test_depth(self):
         self.assertEqual(scanner.find_dcps(self.tmp.name, max_depth=1), [])

@@ -4,7 +4,8 @@ const STATUS = {
   ok: { label: 'OK' },
   warn: { label: 'OK' },
   bv21: { label: 'OK' },
-  error: { label: 'Errors' },
+  minor: { label: 'Minor errors' },
+  error: { label: 'Critical errors' },
   failed: { label: 'Verifier failed' },
   never: { label: 'Never verified' },
   running: { label: 'Running' },
@@ -13,8 +14,10 @@ const STATUS = {
 };
 // Without errors a DCP is OK; its Bv2.1 issues and warnings only show as flags.
 const PASSED = { ok: 1, bv21: 1, warn: 1 };
+// Statuses that show those flags.
+const FLAGGED = { ok: 1, bv21: 1, warn: 1, minor: 1 };
 // For sorting by status, problems first.
-const STATUS_RANK = ['copying', 'running', 'queued', 'failed', 'error', 'never', 'bv21', 'warn', 'ok'];
+const STATUS_RANK = ['copying', 'running', 'queued', 'failed', 'error', 'minor', 'never', 'bv21', 'warn', 'ok'];
 const SORTS = {
   name: { label: 'Name', order: ['A → Z', 'Z → A'] },
   size: { label: 'Size', order: ['Largest first', 'Smallest first'] },
@@ -22,7 +25,8 @@ const SORTS = {
   date: { label: 'Last updated', order: ['Newest first', 'Oldest first'] }
 };
 const SEV = {
-  error: { label: 'Error', title: 'The DCP is broken or may not play' },
+  error: { label: 'Critical', title: 'May stop the DCP from being ingested or played' },
+  minor: { label: 'Minor error', title: 'An error in the XML, the metadata or the subtitles that should not stop the DCP from playing' },
   bv21: { label: 'Bv2.1', title: 'Not compliant with the ISDCF Bv2.1 recommendations' },
   warn: { label: 'Warning', title: 'Worth checking, should not block playback' }
 };
@@ -121,7 +125,7 @@ function statusHtml(d) {
   const st = statusOf(d);
   const cls = PASSED[st] ? 'ok' : st;
   const live = st === 'running' || st === 'copying';
-  return `<span class="status c-${cls}"><span class="dot${live ? ' pulse' : ''}"></span>${esc(statusLabel(d))}</span>${PASSED[st] ? flagsHtml(d) : ''}`;
+  return `<span class="status c-${cls}"><span class="dot${live ? ' pulse' : ''}"></span>${esc(statusLabel(d))}</span>${FLAGGED[st] ? flagsHtml(d) : ''}`;
 }
 
 function sortedDcps(list) {
@@ -193,7 +197,11 @@ function emptyListHtml(s) {
 const ICON_SPIN = '<svg class="spin" width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="6" opacity=".25"></circle><path d="M14 8a6 6 0 0 0-6-6"></path></svg>';
 const ICON_PLAY = '<svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" aria-hidden="true"><path d="M3 1.8v10.4a.6.6 0 0 0 .9.5l8.4-5.2a.6.6 0 0 0 0-1L3.9 1.3a.6.6 0 0 0-.9.5z"></path></svg>';
 const ICON_OK = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#74D3AE" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M7.5 12.5l3 3 6-6.5"></path></svg>';
-const ICON_BAD = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#FF8A7A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M12 7v6M12 16.5v.2"></path></svg>';
+const ICON_BAD = iconAlert('#FF8A7A');
+const ICON_MINOR = iconAlert('#FFA45C');
+function iconAlert(color) {
+  return `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"></circle><path d="M12 7v6M12 16.5v.2"></path></svg>`;
+}
 const ICON_NEVER = '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#6B655C" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="30" height="24" rx="3"></rect><path d="M11 8v24M29 8v24"></path><path d="M17 17.5a3 3 0 1 1 3.8 2.9c-.5.2-.8.6-.8 1.1v.8M20 26v.2"></path></svg>';
 
 function detailHtml(d) {
@@ -268,7 +276,7 @@ ${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span
 
 function resultHtml(d, res) {
   const notes = ui.detail && ui.detail.id === d.id && ui.detail.result ? (ui.detail.result.notes || []) : null;
-  const c = res.counts || { error: 0, bv21: 0, warn: 0 };
+  const c = res.counts || {};
   let html = `<div style="display: flex; flex-direction: column">
 <div class="result-head"><span class="eyebrow">${d.job ? 'Previous result' : 'Last result'}</span>
 <span class="when">${esc(fmtDate(res.finished_at))}${AUTO_RESULT[res.auto] ? ' · ' + AUTO_RESULT[res.auto] : ''} · took ${esc(fmtDur(res.elapsed))}${res.verifier ? ' · DCP-o-matic ' + esc(res.verifier) : ''}</span></div>`;
@@ -276,21 +284,25 @@ function resultHtml(d, res) {
   if (res.status === 'failed') {
     html += `<div class="banner bad" style="margin-top: 16px">${ICON_BAD}<div><b>The verification did not complete</b><span>${esc(res.failure || 'The verifier stopped unexpectedly.')}</span></div></div>`;
   } else {
-    html += '<div class="counts">' + [['error', 'Errors'], ['bv21', 'Bv2.1 issues'], ['warn', 'Warnings']].map(([k, label]) =>
+    html += '<div class="counts">' + [['error', 'Critical errors'], ['minor', 'Minor errors'], ['bv21', 'Bv2.1 issues'], ['warn', 'Warnings']].map(([k, label]) =>
       `<div class="count"><b class="${c[k] ? 'c-' + k : ''}">${c[k] || 0}</b><span>${label}</span></div>`).join('') + '</div>';
     if (res.status === 'ok') {
       html += `<div class="banner ok">${ICON_OK}<div><b>No issues found</b><span>DCP-o-matic found nothing wrong with this DCP.</span></div></div>`;
     } else if (PASSED[res.status]) {
       const found = [c.bv21 ? plural(c.bv21, 'Bv2.1 issue', 'Bv2.1 issues') : '', c.warn ? plural(c.warn, 'warning', 'warnings') : ''].filter(Boolean).join(' and ');
       html += `<div class="banner ok">${ICON_OK}<div><b>OK: no errors</b><span>DCP-o-matic found no error in this DCP, only ${esc(found)}, listed below. They are worth a look but should not stop it from playing.</span></div></div>`;
+    } else if (res.status === 'minor') {
+      html += `<div class="banner minor">${ICON_MINOR}<div><b>Should play: minor errors only</b><span>DCP-o-matic found ${esc(plural(c.minor, 'error', 'errors'))} in the XML, the metadata or the subtitles, but no critical one. Servers should accept this DCP; check the subtitles if any are listed, and tell whoever made it.</span></div></div>`;
+    } else if (res.status === 'error') {
+      html += `<div class="banner bad">${ICON_BAD}<div><b>${esc(plural(c.error, 'critical error', 'critical errors'))}</b><span>This DCP may fail to ingest or to play: missing or damaged files, wrong hashes, invalid picture or sound. Check it before the screening.</span></div></div>`;
     }
   }
 
   html += `<div class="links">${res.report ? `<a class="btn btn-sec btn-link" href="/api/dcp/${esc(d.id)}/report" target="_blank" rel="noopener">Full HTML report</a>` : ''}<a class="btn btn-sec btn-link" href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Raw output</a></div>`;
 
-  const total = (c.error || 0) + (c.bv21 || 0) + (c.warn || 0);
+  const total = (c.error || 0) + (c.minor || 0) + (c.bv21 || 0) + (c.warn || 0);
   if (res.status !== 'failed' && total > 0) {
-    const chips = [['all', 'All', total], ['error', 'Errors', c.error], ['bv21', 'Bv2.1', c.bv21], ['warn', 'Warnings', c.warn]]
+    const chips = [['all', 'All', total], ['error', 'Critical', c.error], ['minor', 'Minor', c.minor], ['bv21', 'Bv2.1', c.bv21], ['warn', 'Warnings', c.warn]]
       .filter(([k, , n]) => k === 'all' || n > 0);
     if (!chips.some(([k]) => k === ui.filter)) ui.filter = 'all';
     html += '<div class="chips" role="group" aria-label="Filter by severity">' + chips.map(([k, label, n]) =>

@@ -6,6 +6,10 @@ The verifier prints three kinds of things on stdout:
 * a progress bar redrawn with carriage returns, e.g. "[=====>    ] 42%"
 * at the end, one line per note, e.g. "Error: The hash of ... is incorrect."
 
+Errors are then sorted into critical ones, which may stop the DCP from being
+ingested or played, and minor ones (XML schema, metadata, subtitles), which
+a server should not mind. See classify().
+
 The exact wording changes between versions, so everything here is tolerant:
 anything we do not understand is still kept in the raw log shown in the UI.
 """
@@ -25,6 +29,38 @@ FILE = re.compile(r"([^\s:'\"()<>]+\.(?:mxf|xml|ttf|otf|png))\b", re.IGNORECASE)
 CLEAN = re.compile(r"^\s*(?:no (?:errors|problems|issues) found|dcp is ok)\b", re.IGNORECASE)
 
 SEVERITIES = {"error": "error", "warning": "warn", "ok": "ok"}
+LEVELS = ("error", "minor", "bv21", "warn")
+
+# The verifier prints no codes, only libdcp's messages (src/verify.cc,
+# note_to_string). These are the errors that should not stop a DCP from
+# playing: they are told apart by their wording. Any other error, including
+# those of future versions, stays critical.
+MINOR_ERRORS = [
+    # Schema problems found by Xerces, e.g. an element in the wrong place.
+    # Files that cannot be read at all also give a critical FAILED_READ.
+    ("INVALID_XML", r"^An XML file is badly formed:"),
+    ("INVALID_CONTENT_KIND", r"^<ContentKind> has an invalid value"),
+    ("INVALID_MAIN_PICTURE_ACTIVE_AREA", r"^<MainPictureActivea?Area> has an invalid value"),
+    ("INVALID_MAIN_SOUND_CONFIGURATION", r"^<MainSoundConfiguration> has an invalid value"),
+    ("MISSING_CPL_CONTENT_VERSION", r"^The CPL .* has no <ContentVersion> tag"),
+    ("UNEXPECTED_DURATION", r"^There is an? <Duration> node inside a <MainMarkers>"),
+    ("UNEXPECTED_ENTRY_POINT", r"^There is an? <EntryPoint> node inside a <MainMarkers>"),
+    # Subtitles and closed captions: picture and sound play, the text may be off.
+    ("EMPTY_TEXT", r"^There is an empty <Text> node in a subtitle"),
+    ("INCORRECT_CLOSED_CAPTION_ORDERING", r"^Some closed captions are not listed in the order"),
+    ("MISMATCHED_CLOSED_CAPTION_VALIGN", r"have different vertical alignments within a <Subtitle>"),
+    ("MISSING_FONT", r"^The font file for font ID"),
+    ("MISSING_LOAD_FONT", r"has <Text> nodes but no <LoadFont> node"),
+    ("MISSING_LOAD_FONT_FOR_FONT", r"does not have a corresponding <LoadFont> node"),
+    ("MISSING_SUBTITLE", r"^The subtitle asset .* has no subtitles"),
+    ("SUBTITLE_OVERLAPS_REEL_BOUNDARY", r"^At least one subtitle extends outside of its reel"),
+]
+MINOR_ERRORS = [(code, re.compile(rx)) for code, rx in MINOR_ERRORS]
+# Xerces' words for a file that is not even well-formed XML.
+NOT_WELL_FORMED = re.compile(
+    r"expected end of|unterminated|unexpected end|invalid document structure|not well-formed|no root element",
+    re.IGNORECASE,
+)
 
 
 def severity(word):
@@ -47,6 +83,20 @@ def parse_note(line):
     f = FILE.search(msg)
     if f:
         note["file"] = os.path.basename(f.group(1))
+    return classify(note)
+
+
+def classify(note):
+    """Turn an error into a minor one ("minor") when it should not stop the
+    DCP from playing. Works on stored notes too, so old results benefit."""
+    if note["sev"] not in ("error", "minor"):
+        return note
+    note["sev"] = "error"
+    for code, rx in MINOR_ERRORS:
+        if rx.search(note["msg"]):
+            if code != "INVALID_XML" or not NOT_WELL_FORMED.search(note["msg"]):
+                note["sev"] = "minor"
+            break
     return note
 
 
@@ -112,7 +162,22 @@ class OutputParser:
 
 def status_of(notes):
     sevs = {n["sev"] for n in notes}
-    for s in ("error", "bv21", "warn"):
+    for s in LEVELS:
         if s in sevs:
             return s
     return "ok"
+
+
+def counts_of(notes):
+    return {s: sum(1 for n in notes if n["sev"] == s) for s in LEVELS}
+
+
+def reclassify(result):
+    """Apply the current rules to a stored result, made by an older dcpcheck."""
+    notes = result.get("notes") or []
+    for n in notes:
+        classify(n)
+    result["counts"] = counts_of(notes)
+    if result.get("status") != "failed":
+        result["status"] = status_of(notes)
+    return result

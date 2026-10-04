@@ -6,8 +6,8 @@ written for a Synology NAS, but it runs on any machine that has Docker.
 
 Point it at the folder where your DCPs live, and you get a page in your browser
 that lists every DCP. You can start a verification with one click, follow its
-progress and read the result: errors, Bv2.1 issues and warnings, as
-reported by DCP-o-matic.
+progress and read the result: critical and minor errors, Bv2.1 issues and
+warnings, as reported by DCP-o-matic.
 
 ![dcpcheck showing a DCP with one error and one warning](docs/screenshot.png)
 
@@ -47,8 +47,9 @@ it and shows what it says. If this project is useful to you, consider
 - Verifies new DCPs by itself as soon as a scan finds them.
 - Marks a DCP without errors as **OK**, with small flags for its Bv2.1
   issues and warnings.
-- Sorts the notes into **Errors**, **Bv2.1 issues** and **Warnings**, with
-  filters.
+- Sorts the notes into **Critical errors**, **Minor errors**, **Bv2.1
+  issues** and **Warnings**, with filters (see
+  [Critical and minor errors](#critical-and-minor-errors)).
 - Keeps the last result of each DCP, the verifier's full HTML report and its
   raw output.
 - Mounts your DCPs **read-only**: dcpcheck never writes to them.
@@ -164,7 +165,8 @@ proxy with an access-control profile.
   `dcpomatic2_verify_cli [VERIFY_ARGS] -o report.html <DCP>` for each
   verification.
 - `app/dcpcheck/output.py` reads the verifier's output: stages, progress
-  bar, and lines starting with `Error:`, `Bv2.1 error:` or `Warning:`.
+  bar, and lines starting with `Error:`, `Bv2.1 error:` or `Warning:`. It
+  also tells critical errors from minor ones.
 - Results are stored in `/data/results.json`, with the raw output in
   `/data/logs/` and the verifier's HTML reports in `/data/reports/`.
 - `app/static/` holds the single-page UI, in plain HTML, CSS and JavaScript.
@@ -191,6 +193,30 @@ when its copy is complete, if it is still arriving). The DCPs already there
 when dcpcheck first starts are not: verify them by hand. dcpcheck keeps the
 list of the DCPs it has seen in `/data/known.json` and never forgets one, so
 a share that was unmounted for a while doesn't get verified again in full.
+
+### Critical and minor errors
+
+DCP-o-matic reports all its errors the same way. dcpcheck splits them in two
+so that you can tell at a glance whether a DCP will play:
+
+- **Critical errors** may stop the DCP from being ingested or played:
+  missing or unreadable files, wrong hashes, damaged JPEG2000 frames, a bit
+  rate over 250 Mbit/s, an invalid frame rate, mixed SMPTE and Interop
+  parts, durations under one second, and so on. A DCP with one of them is
+  shown as **Critical errors**, in red.
+- **Minor errors** should not stop it from playing: XML that does not follow
+  the schema (an element in the wrong place in the ASSETMAP, say), wrong
+  metadata such as `<ContentKind>` or `<MainSoundConfiguration>`, and
+  problems in the subtitles or closed captions. A DCP that only has those is
+  shown as **Minor errors**, in orange. Its picture and sound should play,
+  but the errors are worth reporting to whoever made it, and its subtitles
+  worth a look.
+
+The verifier prints no error codes, so dcpcheck recognises the minor errors
+by their wording (the list is `MINOR_ERRORS` in `app/dcpcheck/output.py`).
+Any error it doesn't recognise, such as one added by a later version of
+DCP-o-matic, stays critical. The rules also apply to the results already
+saved, when dcpcheck starts.
 
 When a verification ends without any note and with a non-zero exit code,
 dcpcheck shows it as *Verifier failed*. The raw output, a click away,

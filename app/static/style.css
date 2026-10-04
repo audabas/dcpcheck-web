@@ -17,6 +17,7 @@
   --warn: #F2B544;
   --bv21: #C7A6FF;
   --error: #FF8A7A;
+  --minor: #FFA45C;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: 'Schibsted Grotesk', 'Helvetica Neue', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color-scheme: dark;
@@ -147,6 +148,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .banner svg { flex: 0 0 auto; }
 .banner.ok { background: rgba(116, 211, 174, 0.08); border: 1px solid rgba(116, 211, 174, 0.3); }
 .banner.bad { background: rgba(255, 138, 122, 0.08); border: 1px solid rgba(255, 138, 122, 0.3); }
+.banner.minor { background: rgba(255, 164, 92, 0.08); border: 1px solid rgba(255, 164, 92, 0.3); }
 
 .links { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 26px 20px; }
 
@@ -160,6 +162,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .notes li { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 16px; padding: 16px 26px; border-top: 1px solid var(--line); }
 .sev { flex: 0 0 auto; min-width: 118px; display: inline-flex; justify-content: center; padding: 4px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; }
 .sev.error { color: var(--error); background: rgba(255, 138, 122, 0.13); }
+.sev.minor { color: var(--minor); background: rgba(255, 164, 92, 0.13); }
 .sev.bv21 { color: var(--bv21); background: rgba(199, 166, 255, 0.13); }
 .sev.warn { color: var(--warn); background: rgba(242, 181, 68, 0.13); }
 .note-body { flex: 1 1 320px; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
@@ -171,6 +174,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .c-warn { color: var(--warn); }
 .c-bv21 { color: var(--bv21); }
 .c-error, .c-failed { color: var(--error); }
+.c-minor { color: var(--minor); }
 .c-never { color: var(--muted); }
 .c-running, .c-queued { color: var(--run); }
 .c-copying { color: var(--copy); }

@@ -49,6 +49,7 @@ def pkl(sizes):
 SAMPLES = [
     ("Festival2026_ADV_F_FR-XX_FR_20_2K_20260920_SOS_SMPTE_OV", "advertisement", 45 * 24, 1998, 1080, "smpte", "WARN"),
     ("LaTraversee_FTR-1_F_FR-XX_FR-TP_51_2K_20260911_SOS_SMPTE_OV", "feature", 102 * 60 * 24, 1998, 1080, "smpte", ""),
+    ("LeDernierQuai_SHR_F_FR-XX_FR_51_2K_20260928_SOS_SMPTE_OV", "short", 14 * 60 * 24, 1998, 1080, "smpte", "MINOR WARN"),
     ("LesHautsPlateaux_FTR_S_EN-FR_FR_51_2K_20260815_SOS_IOP_OV", "feature", 88 * 60 * 24, 2048, 858, "iop", "IOP"),
     ("MinuitAuPort_FTR-2_F_FR-XX_FR-TP_51_2K_20260902_SOS_SMPTE_OV", "feature", 96 * 60 * 24, 1998, 1080, "smpte", "ERR"),
 ]

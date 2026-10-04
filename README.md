@@ -15,35 +15,13 @@ reported by DCP-o-matic.
 
 ---
 
-## All the real work is done by DCP-o-matic
+## Built on DCP-o-matic
 
-dcpcheck is a thin layer on top of somebody else's remarkable work.
-**Everything that matters here, the actual checking of a DCP, is done by
-[DCP-o-matic](https://dcpomatic.com), written by Carl Hetherington** with
-help from many contributors and translators.
-
-DCP-o-matic is a free and open-source (GPL) program that makes, inspects,
-plays and checks Digital Cinema Packages. For more than a decade, Carl has
-built and maintained it, together with
-libdcp, the library underneath it. That is a huge
-amount of patient work on a field that is complex, poorly documented and
-usually reserved for expensive commercial tools. Thanks to him, independent
-filmmakers, festivals, small distributors, film schools and cinemas all over
-the world can produce and check DCPs for free. The verifier used here reads
-the ASSETMAP, PKL and CPLs, checks the hash of every file and looks inside
-the pictures, sounds and subtitles. It also checks the DCP against the SMPTE
-standards and the ISDCF Bv2.1 recommendations. dcpcheck only starts it and
-shows what it says.
-
-If this project is useful to you, DCP-o-matic is what you should thank:
-
-- ❤️ **[Donate to DCP-o-matic](https://dcpomatic.com/donate)**. This is
-  how the project lives.
-- 📖 Read the [DCP-o-matic manual](https://dcpomatic.com/manual/html/), whose
-  [chapter on verifying DCPs](https://dcpomatic.com/manual/html/ch19.html)
-  explains what the verifier reports.
-- 💬 Use the [DCP-o-matic forum](https://dcpomatic.com/forum/) for anything
-  about DCPs and verification itself.
+dcpcheck relies entirely on [DCP-o-matic](https://dcpomatic.com), the free
+and open-source DCP tool written by Carl Hetherington and its contributors:
+the actual checking of a DCP is done by its verifier, and dcpcheck only starts
+it and shows what it says. If this project is useful to you, consider
+**[making a donation to DCP-o-matic](https://dcpomatic.com/donate)**.
 
 > dcpcheck is **not** affiliated with DCP-o-matic or its author. Please do
 > not report problems with this web interface to DCP-o-matic. Open an issue
@@ -248,8 +226,8 @@ python3 -m unittest discover -s tests
 ## License
 
 The code in this repository is released under the
-[Licence Publique Rien À Branler](LICENSE) (LPRAB), the French version of
-the WTFPL: *faites ce que vous voulez, j’en ai rien à branler*.
+[Licence Publique Rien À Branler](LICENSE) (LPRAB): *faites ce que vous
+voulez, j’en ai rien à branler*.
 
 This license only covers dcpcheck itself. **DCP-o-matic is © Carl
 Hetherington and contributors, licensed under the

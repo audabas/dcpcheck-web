@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 
-from dcpcheck.output import OutputParser, parse_note, status_of  # noqa: E402
+from dcpcheck.output import OutputParser, parse_note, reclassify, status_of  # noqa: E402
 
 
 class ParseNote(unittest.TestCase):
@@ -22,6 +22,48 @@ class ParseNote(unittest.TestCase):
         self.assertNotIn("code", parse_note("Warning: The DCP is SMPTE."))
 
 
+class Classify(unittest.TestCase):
+    def test_critical(self):
+        for msg in (
+            "The hash (abc) of the picture asset j2c.mxf does not agree with the PKL file (def).",
+            "The file j2c.mxf for an asset in the asset map cannot be found.",
+            "Frame 1 (timecode 00:00:00:01) has an invalid JPEG2000 codestream (bad marker).",
+            "Something new that dcpcheck has never seen.",
+            "An XML file is badly formed: expected end of tag 'Id' (cpl.xml:12)",
+        ):
+            self.assertEqual(parse_note("Error: " + msg)["sev"], "error", msg)
+
+    def test_minor(self):
+        for msg in (
+            "An XML file is badly formed: element 'AnnotationText' is not allowed for content model "
+            "'(Id,AnnotationText?,VolumeCount,IssueDate,Issuer,Creator,AssetList)' (ASSETMAP:84)",
+            "<ContentKind> has an invalid value foo.",
+            "The CPL 123 has no <ContentVersion> tag",
+            'The font file for font ID "f" was not found, or was not referred to in the ASSETMAP.',
+            "At least one subtitle extends outside of its reel.",
+        ):
+            self.assertEqual(parse_note("Error: " + msg)["sev"], "minor", msg)
+
+    def test_only_errors(self):
+        self.assertEqual(parse_note("Bv2.1 error: The subtitle asset 1 has no subtitles.")["sev"], "bv21")
+        self.assertEqual(parse_note("Warning: <ContentKind> has an invalid value foo.")["sev"], "warn")
+
+    def test_stored_result(self):
+        res = {
+            "status": "error",
+            "counts": {"error": 1, "bv21": 0, "warn": 1},
+            "notes": [
+                {"sev": "error", "msg": "An XML file is badly formed: element 'X' is not allowed for content model 'Y' (ASSETMAP:3)"},
+                {"sev": "warn", "msg": "meh"},
+            ],
+        }
+        reclassify(res)
+        self.assertEqual(res["status"], "minor")
+        self.assertEqual(res["counts"], {"error": 0, "minor": 1, "bv21": 0, "warn": 1})
+        failed = reclassify({"status": "failed", "notes": []})
+        self.assertEqual(failed["status"], "failed")
+
+
 class Parser(unittest.TestCase):
     def test_stream(self):
         p = OutputParser()
@@ -33,9 +75,11 @@ class Parser(unittest.TestCase):
         self.assertEqual(kept, [])
         self.assertEqual(p.progress, 87)
         p.feed("\rError: bad thing in cpl.xml\nWarning: meh\n")
+        p.feed("Error: <ContentKind> has an invalid value foo.\n")
         p.finish()
-        self.assertEqual([n["sev"] for n in p.notes], ["error", "warn"])
+        self.assertEqual([n["sev"] for n in p.notes], ["error", "warn", "minor"])
         self.assertEqual(status_of(p.notes), "error")
+        self.assertEqual(status_of(p.notes[1:]), "minor")
 
     def test_clean(self):
         p = OutputParser()

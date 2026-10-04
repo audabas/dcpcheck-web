@@ -12,7 +12,7 @@ import time
 from collections import deque
 
 from . import scanner
-from .output import OutputParser, status_of
+from .output import OutputParser, counts_of, reclassify, status_of
 
 
 def measures(d):
@@ -106,9 +106,12 @@ class Manager:
     def load_results(self):
         try:
             with open(self.path("results.json"), encoding="utf-8") as f:
-                return json.load(f)
+                results = json.load(f)
         except (OSError, ValueError):
             return {}
+        for r in results.values():
+            reclassify(r)
+        return results
 
     def load_known(self):
         """The DCPs seen so far, or None before the first scan that found any."""
@@ -440,7 +443,7 @@ class Manager:
             "elapsed": round(now - (job.started_at or now)),
             "status": "failed" if failure else status_of(notes),
             "notes": notes,
-            "counts": {s: sum(1 for n in notes if n["sev"] == s) for s in ("error", "bv21", "warn")},
+            "counts": counts_of(notes),
             "exit_code": rc,
             "failure": failure,
             "report": has_report,

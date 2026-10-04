@@ -2,8 +2,8 @@
 """Stand-in for dcpomatic2_verify_cli, for working on the UI without
 DCP-o-matic installed. It prints stages, a progress bar and notes the way
 the real verifier does. Notes are picked from a ".fake" file in the DCP
-(see dev/make_sample_dcps.py): "ERR" gives an error, "IOP" Bv2.1 issues,
-"WARN" a warning.
+(see dev/make_sample_dcps.py): "ERR" gives a critical error, "MINOR" a
+minor one, "IOP" Bv2.1 issues, "WARN" a warning.
 
     VERIFIER=dev/fake_verify_cli.py FAKE_SPEED=5 python3 -m dcpcheck
 """
@@ -48,7 +48,10 @@ time.sleep(0.3 / speed)
 
 notes = []
 if "ERR" in fake:
-    notes.append("Error: The hash (QzW2nUJ6XzA8Kz/f) of the picture asset j2c_video.mxf does not agree with the PKL file (INCORRECT_PICTURE_HASH).")
+    notes.append("Error: The hash (QzW2nUJ6XzA8Kz/fT1Rc3h9YbQo=) of the picture asset j2c_video.mxf does not agree with the PKL file (8sVq0pL2mWc4Jd7kHxN5uZr1EyA=).")
+if "MINOR" in fake:
+    notes.append("Error: An XML file is badly formed: element 'AnnotationText' is not allowed for content model "
+                 "'(Id,AnnotationText?,VolumeCount,IssueDate,Issuer,Creator,AssetList)' (ASSETMAP.xml:84)")
 if "IOP" in fake:
     notes.append("Bv2.1 error: The DCP is Interop.  Bv2.1 requires SMPTE.")
     notes.append("Bv2.1 error: The subtitle asset sub.xml has no <Language> tag.")

@@ -193,13 +193,14 @@ function rowHtml(d) {
   else if (st === 'copying') line = 'Still arriving on the disk';
   else if (d.result && ui.sort !== 'date') line = 'Verified ' + fmtDate(d.result.finished_at);
   else line = 'Updated ' + fmtDate(d.mtime);
-  let side;
+  // A verified folder is re-run from its detail, not from the list.
+  let side = '';
   if (st === 'copying') {
     side = `<span class="copying" title="Copy in progress: the folder is still growing">${ICON_SPIN}<span class="mono">${esc(fmtSpeed(d.copy.speed))}</span></span>`;
-  } else {
-    const action = busy ? (running ? 'Running' : 'Queued') : (d.result ? 'Re-run' : 'Verify');
-    const aria = (d.result ? 'Re-run verification of ' : 'Verify ') + d.name;
-    side = `<button class="btn btn-sec" type="button" data-verify="${esc(d.id)}" data-key="verify-${esc(d.id)}" aria-label="${esc(aria)}"${busy ? ' disabled' : ''}>${action}</button>`;
+  } else if (busy) {
+    side = `<button class="btn btn-sec" type="button" data-key="verify-${esc(d.id)}" disabled>${running ? 'Running' : 'Queued'}</button>`;
+  } else if (!d.result) {
+    side = `<button class="btn btn-sec" type="button" data-verify="${esc(d.id)}" data-key="verify-${esc(d.id)}" aria-label="${esc('Verify ' + d.name)}">Verify</button>`;
   }
   return `<button class="row-main" type="button" data-select="${esc(d.id)}" data-key="sel-${esc(d.id)}" aria-pressed="${sel}">
 <span class="row-name">${esc(d.relpath)}</span>
@@ -207,7 +208,7 @@ function rowHtml(d) {
 ${running ? `<span class="bar"><span class="bar-live" style="width:${Math.floor(d.job.progress)}%"></span></span>` : ''}
 ${st === 'copying' && copyPct(d) != null ? `<span class="bar"><span class="bar-live bar-copy" style="width:${copyPct(d)}%"></span></span>` : ''}
 </button>
-<div class="row-side">${side}</div>`;
+${side ? `<div class="row-side">${side}</div>` : ''}`;
 }
 
 function emptyListHtml(s) {
@@ -591,9 +592,11 @@ document.addEventListener('click', async ev => {
     ui.selected = t.dataset.select;
     save('selected', ui.selected);
     render();
-    // On narrow screens the detail sits below the list: bring it into view.
+    // Bring the top of the detail into view: below the list on narrow
+    // screens, above the viewport on wide ones once the list is scrolled.
     const detail = document.getElementById('detail');
-    if (detail.getBoundingClientRect().top > window.innerHeight * 0.6) detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const top = detail.getBoundingClientRect().top;
+    if (top < 0 || top > window.innerHeight * 0.6) detail.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } else if (t.dataset.verify) {
     ui.selected = t.dataset.verify;
     save('selected', ui.selected);

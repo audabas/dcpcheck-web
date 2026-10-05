@@ -110,7 +110,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .empty-list b { display: block; color: var(--text); font-size: 15px; margin-bottom: 4px; }
 
 /* Detail */
-.detail { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+.detail { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 20px; scroll-margin-top: 16px; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
 .card-pad { padding: 24px 26px; display: flex; flex-direction: column; gap: 18px; }
 .sel-name { margin: 0; font-family: var(--mono); font-size: 18px; font-weight: 500; line-height: 1.45; word-break: break-all; }

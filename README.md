@@ -336,11 +336,9 @@ python3 -m unittest discover -s tests
 ## License
 
 The code in this repository is released under the
-[Licence Publique Rien À Branler](LICENSE) (LPRAB): *faites ce que vous
-voulez, j’en ai rien à branler*.
+[Licence Publique Rien À Branler](LICENSE) (LPRAB)
 
-This license only covers dcpcheck itself. **DCP-o-matic is © Carl
-Hetherington and contributors, licensed under the
+This license only covers dcpcheck itself. **DCP-o-matic is licensed under the
 [GNU GPL](https://www.gnu.org/licenses/)**. It is not included
 in this repository. It is downloaded from dcpomatic.com when you build the
 image, so an image you build contains DCP-o-matic under its own license. If

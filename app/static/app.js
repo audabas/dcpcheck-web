@@ -229,6 +229,19 @@ function iconAlert(color) {
 }
 const ICON_NEVER = '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="#6B655C" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="8" width="30" height="24" rx="3"></rect><path d="M11 8v24M29 8v24"></path><path d="M17 17.5a3 3 0 1 1 3.8 2.9c-.5.2-.8.6-.8 1.1v.8M20 26v.2"></path></svg>';
 
+// A folder can hold several CPLs: 2D and 3D, original and dubbed versions...
+function versionsHtml(versions) {
+  const durations = new Set(versions.map(v => v.duration));
+  const items = versions.map(v => {
+    const meta = [v.picture, v.sound, v.audio_language,
+      v.subtitles === 'None' ? 'No subtitles' : v.subtitles && 'Subtitles: ' + v.subtitles,
+      v.captions && 'Closed captions: ' + v.captions,
+      durations.size > 1 && v.duration].filter(Boolean);
+    return `<li><span class="version-title">${esc(v.title || 'Untitled CPL')}</span><span class="version-meta">${esc(meta.join(' · '))}</span></li>`;
+  });
+  return `<div class="versions"><span class="versions-head">${versions.length} versions (CPLs)</span><ul>${items.join('')}</ul></div>`;
+}
+
 function detailHtml(d) {
   const f = d.facts || {};
   const facts = [
@@ -238,7 +251,7 @@ function detailHtml(d) {
     ['KDM', f.kdm == null ? null : f.kdm ? 'Required' : 'Not required']
   ];
   if (f.captions) facts.splice(7, 0, ['Closed captions', f.captions]);
-  if (f.cpls) facts.push(['CPLs', f.cpls]);
+  if (f.cpls && !f.versions) facts.push(['CPLs', f.cpls]);
   const st = statusOf(d);
   const res = d.result;
   const running = st === 'running';
@@ -248,9 +261,10 @@ function detailHtml(d) {
 <div style="display: flex; flex-direction: column; gap: 8px">
 <span class="eyebrow">Selected folder</span>
 <h2 class="sel-name" id="detail-title">${esc(d.relpath)}</h2>
-${f.title && f.title !== d.name ? `<span class="sel-title">${esc(f.title)}</span>` : ''}
+${f.title && f.title !== d.name && !f.versions ? `<span class="sel-title">${esc(f.title)}</span>` : ''}
 </div>
 <dl class="facts">${facts.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v == null || v === '' ? '—' : v)}</dd></div>`).join('')}</dl>
+${f.versions ? versionsHtml(f.versions) : ''}
 </div>`;
   if (f.kdm) html += kdmCardHtml(d);
 

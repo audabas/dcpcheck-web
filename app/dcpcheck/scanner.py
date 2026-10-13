@@ -297,6 +297,25 @@ def sound_from_config(cfg):
     return None
 
 
+# SMPTE ST 429-18 data essence of Immersive Audio Bitstream (IAB) tracks.
+IAB_DATA_TYPE = "060e2b34.04010105.0e090604"
+
+
+def sound_extras(cpl, cfg):
+    """What a CPL adds to its main sound: an IAB track, and the hearing
+    impaired (HI) or visually impaired narration (VI) channels its
+    MainSoundConfiguration lists."""
+    extras = []
+    reels = child(cpl, "ReelList")
+    for el in reels.iter() if reels is not None else []:
+        if local(el.tag) == "AuxData" and IAB_DATA_TYPE in (text(el, "DataType") or "").lower():
+            extras.append("IAB")
+            break
+    channels = (cfg or "").partition("/")[2].split(",")
+    extras += [label for code, label in (("HI", "HI"), ("VIN", "VI")) if code in channels]
+    return extras
+
+
 def channels_label(code):
     return {"10": "1.0", "20": "2.0", "51": "5.1", "71": "7.1", "61": "6.1", "30": "3.0", "40": "4.0"}.get(code, code)
 
@@ -318,10 +337,6 @@ def language_label(tag):
     return f"{name} ({tag})" if name else tag
 
 
-def languages_label(tags):
-    return ", ".join(language_label(t) for t in tags)
-
-
 def cpl_languages(cpls):
     """The language tags the CPLs give their sound, subtitles and closed
     captions, in order of appearance. A track listed without a language
@@ -341,6 +356,11 @@ def cpl_languages(cpls):
                 add(kind, [lang] if lang else [])
             elif local(el.tag) == "MainSubtitleLanguageList":  # SMPTE 429-16, required by Bv2.1
                 add("subtitles", (el.text or "").split())
+            elif local(el.tag) == "SoundfieldGroupLabelSubDescriptor":
+                # Bv2.1 gives the spoken language in the MCA labels of the
+                # sound rather than in a <Language> of the MainSound.
+                lang = text(el, "RFC5646SpokenLanguage")
+                add("audio", [lang] if lang else [])
     return found
 
 
@@ -366,30 +386,51 @@ def languages_from_name(name):
 
 def read_languages(cpls, names):
     """Labels for the sound, subtitle and closed caption languages, from the
-    CPLs or, when they do not say, from the ISDCF name of the DCP."""
+    CPLs or, when they do not say, from the ISDCF name of the DCP. Each CPL
+    is read on its own, its title first, then the labels of all of them are
+    put together."""
+    per_cpl = [cpl_language_labels([cpl], (text(cpl, "ContentTitleText"),) + tuple(names)) for cpl in cpls]
+    return combine_languages(per_cpl or [cpl_language_labels([], names)])
+
+
+def cpl_language_labels(cpls, names):
     langs = cpl_languages(cpls)
     isdcf = next((x for x in map(languages_from_name, filter(None, names)) if x), {})
-    facts = {}
+    out = {}
     for kind, key in (("audio", "audio_language"), ("subtitles", "subtitles"), ("captions", "captions")):
         tags = langs.get(kind)
         if tags:
-            facts[key] = languages_label(tags)
+            out[key] = [language_label(t) for t in tags]
         elif kind == "captions":
             if tags is not None or isdcf.get("captions"):
-                facts[key] = "Language not given"
+                out[key] = ["Language not given"]
         elif isdcf.get(kind):
-            facts[key] = languages_label(isdcf[kind])
-            if kind == "subtitles" and isdcf["burned_in"]:
-                facts[key] += " · burned in"
+            burned = " · burned in" if kind == "subtitles" and isdcf["burned_in"] else ""
+            out[key] = [language_label(t) + burned for t in isdcf[kind]]
         elif tags is not None:  # listed in the CPL, without a language
-            facts[key] = "Language not given"
+            out[key] = ["Language not given"]
         elif kind in isdcf or (kind == "subtitles" and cpls):
-            facts[key] = "None"
+            out[key] = ["None"]
+    return out
+
+
+def combine_languages(labels):
+    """One label per kind for several CPLs: the languages of all of them,
+    "None" only when none has any."""
+    facts = {}
+    for one in labels:
+        for key, items in one.items():
+            seen = facts.setdefault(key, [])
+            seen.extend(x for x in items if x not in seen)
+    for key, items in facts.items():
+        if len(items) > 1 and "None" in items:
+            items.remove("None")
+        facts[key] = ", ".join(items)
     return facts
 
 
 def read_facts(path, name):
-    cpls = find_cpls(path)
+    cpls = sorted(find_cpls(path), key=lambda c: text(c, "ContentTitleText") or "")
     cpl = cpls[0] if cpls else None
     facts = {"standard": standard_of(path, cpl)}
     if cpl is None:
@@ -398,14 +439,35 @@ def read_facts(path, name):
     facts["title"] = text(cpl, "ContentTitleText")
     kind = (text(cpl, "ContentKind") or "").strip()
     facts["kind"] = KINDS.get(kind.lower(), kind.capitalize() or None)
+    versions = [cpl_summary(c, name) for c in cpls]
+    # Several CPLs (2D and 3D, original and dubbed version...) can share a
+    # folder: each fact lists the values of all of them.
+    for key in ("frame_rate", "duration", "picture", "sound"):
+        values = []
+        for v in versions:
+            if v.get(key) and v[key] not in values:
+                values.append(v[key])
+        facts[key] = ", ".join(values)
+    facts.update(read_languages(cpls, (name,)))
     if len(cpls) > 1:
         facts["cpls"] = len(cpls)
+        for v, c in zip(versions, cpls):
+            v.update(read_languages([c], (name,)))
+        facts["versions"] = [{k: x for k, x in v.items() if x} for v in versions]
+    facts = {k: v for k, v in facts.items() if v}
+    facts["kdm"] = encrypted(cpls)
+    return facts
 
+
+def cpl_summary(cpl, name):
+    """Title, frame rate, duration, picture and sound of one CPL."""
+    out = {"title": text(cpl, "ContentTitleText")}
     total = 0.0
     size = None
     ratio = None  # Interop CPLs only give an aspect ratio
     stereo = False
     sound = None
+    config = None
     reels = child(cpl, "ReelList")
     for reel in reels if reels is not None else []:
         assets = child(reel, "AssetList")
@@ -438,10 +500,11 @@ def read_facts(path, name):
                         ratio = float(sar[0])
                     except ValueError:
                         pass
-            facts.setdefault("frame_rate", f"{fps:g} fps")
+            out.setdefault("frame_rate", f"{fps:g} fps")
         meta = child(assets, "CompositionMetadataAsset")
         if meta is not None:
-            sound = sound or sound_from_config(text(meta, "MainSoundConfiguration"))
+            config = config or text(meta, "MainSoundConfiguration")
+            sound = sound or sound_from_config(config)
             area = child(meta, "MainPictureStoredArea")
             if area is None:
                 area = child(meta, "MainPictureActiveArea")
@@ -452,15 +515,14 @@ def read_facts(path, name):
                     pass
 
     if total:
-        facts["duration"] = fmt_duration(total)
+        out["duration"] = fmt_duration(total)
     if size:
-        facts["picture"] = picture_label(size[0], size[1], stereo)
+        out["picture"] = picture_label(size[0], size[1], stereo)
     elif ratio:
-        facts["picture"] = picture_from_ratio(ratio, name, stereo)
+        out["picture"] = picture_from_ratio(ratio, out["title"] or name, stereo)
     elif stereo:
-        facts["picture"] = "3D"
-    facts["sound"] = sound or sound_from_name(name)
-    facts.update(read_languages(cpls, (name, facts.get("title"))))
-    facts = {k: v for k, v in facts.items() if v}
-    facts["kdm"] = encrypted(cpls)
-    return facts
+        out["picture"] = "3D"
+    sound = sound or sound_from_name(out["title"] or "") or sound_from_name(name)
+    if sound:
+        out["sound"] = " · ".join([sound] + [x for x in sound_extras(cpl, config) if x not in sound])
+    return out

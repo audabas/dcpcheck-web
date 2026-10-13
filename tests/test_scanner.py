@@ -102,6 +102,47 @@ class Scanner(unittest.TestCase):
         self.assertEqual(facts["subtitles"], "French (fr-FR), German (de)")
         self.assertEqual(facts["captions"], "Language not given")
 
+    def test_versions(self):
+        # A folder with an original version and a dubbed one, as Bv2.1 CPLs
+        # write them: the spoken language is in the MCA labels of the sound.
+        cpl = ('<CompositionPlaylist xmlns="http://www.smpte-ra.org/schemas/429-7/2006/CPL" '
+               'xmlns:meta="http://www.smpte-ra.org/schemas/429-16/2014/CPL-Metadata" '
+               'xmlns:r0="http://www.smpte-ra.org/reg/395/2014/13/1/aaf" xmlns:r1="http://www.smpte-ra.org/reg/335/2012">'
+               '<ContentTitleText>{title}</ContentTitleText><ReelList><Reel><AssetList>'
+               '<MainPicture><EditRate>24 1</EditRate><Duration>2400</Duration><ScreenAspectRatio>4096 1716</ScreenAspectRatio></MainPicture>'
+               '<MainSound><Id>urn:uuid:1</Id></MainSound>{aux}'
+               '<meta:CompositionMetadataAsset><meta:MainSoundConfiguration>{config}</meta:MainSoundConfiguration>'
+               '<meta:MCASubDescriptors><r0:SoundfieldGroupLabelSubDescriptor><r1:RFC5646SpokenLanguage>{lang}</r1:RFC5646SpokenLanguage>'
+               '</r0:SoundfieldGroupLabelSubDescriptor></meta:MCASubDescriptors></meta:CompositionMetadataAsset>'
+               '</AssetList></Reel></ReelList></CompositionPlaylist>')
+        iab = '<AuxData xmlns="http://www.dolby.com/schemas/2012/AD"><DataType>urn:smpte:ul:060e2b34.04010105.0e090604.00000000</DataType></AuxData>'
+        with tempfile.TemporaryDirectory() as tmp:
+            for n, title, lang, config, aux in (
+                    ("a", "Film_FTR_S_FR-XX_FR_IAB-51-VI_4K_X_VF", "fr", "51/L,R,C,LFE,Ls,Rs,-,VIN", iab),
+                    ("b", "Film_FTR_S_EN-XX_OV_51_4K_X_OV", "en", "51/L,R,C,LFE,Ls,Rs,-,-", "")):
+                with open(os.path.join(tmp, n + ".xml"), "w") as f:
+                    f.write(cpl.format(title=title, lang=lang, config=config, aux=aux))
+            facts = scanner.read_facts(tmp, "Film_FTR_S_EN-XX_OV_51_4K_X_OV")
+        self.assertEqual(facts["audio_language"], "English (en), French (fr)")
+        self.assertEqual(facts["sound"], "5.1, 5.1 · IAB · VI")
+        self.assertEqual(facts["cpls"], 2)
+        self.assertEqual([(v["title"], v["audio_language"], v["sound"]) for v in facts["versions"]], [
+            ("Film_FTR_S_EN-XX_OV_51_4K_X_OV", "English (en)", "5.1"),
+            ("Film_FTR_S_FR-XX_FR_IAB-51-VI_4K_X_VF", "French (fr)", "5.1 · IAB · VI"),
+        ])
+
+    def test_languages_of_each_cpl_name(self):
+        # Without languages in the CPLs, each CPL's own title tells them.
+        cpl = ('<CompositionPlaylist xmlns="http://www.smpte-ra.org/schemas/429-7/2006/CPL">'
+               '<ContentTitleText>{}</ContentTitleText><ReelList/></CompositionPlaylist>')
+        with tempfile.TemporaryDirectory() as tmp:
+            for n, title in (("a", "Film_FTR_F_EN-XX_OV_51_2K"), ("b", "Film_FTR_F_FR-XX_FR_51_2K"), ("c", "Film_FTR_F_DE-fr_FR_51_2K")):
+                with open(os.path.join(tmp, n + ".xml"), "w") as f:
+                    f.write(cpl.format(title))
+            facts = scanner.read_facts(tmp, "Film_FTR_F_EN-XX_OV_51_2K")
+        self.assertEqual(facts["audio_language"], "German (DE), English (EN), French (FR)")
+        self.assertEqual(facts["subtitles"], "French (FR) · burned in")
+
     def test_languages_from_name(self):
         langs = lambda name: scanner.read_languages([], [name])
         self.assertEqual(langs("Film_FTR_F_FR-XX_FR-TP_51_2K"), {"audio_language": "French (FR)", "subtitles": "None"})

@@ -40,7 +40,9 @@ it and shows what it says. If this project is useful to you, consider
   (SMPTE/Interop), picture container, duration, sound, audio and subtitle
   languages (see [Languages](#languages)), size, and whether it needs a
   **KDM** (it does when the CPL lists encrypted assets). Encrypted
-  DCPs carry a *KDM* flag in the list.
+  DCPs carry a *KDM* flag in the list. When a folder holds several CPLs
+  (2D and 3D, original and dubbed versions...), the summary covers all of
+  them and lists each version with its picture, sound and languages.
 - Checks KDMs against an encrypted DCP: drop KDM files, or a ZIP of KDMs,
   on the page (see [Checking KDMs](#checking-kdms)).
 - Sorts the list by name, size, status or date of last change.
@@ -219,14 +221,16 @@ a share that was unmounted for a while doesn't get verified again in full.
 ### Languages
 
 The audio, subtitle and closed caption languages come from the CPLs: the
-`<Language>` of their sound, subtitle and closed caption tracks, and the
-`MainSubtitleLanguageList` of SMPTE CPLs (which Bv2.1 requires). When a
-folder holds several CPLs (an original version and a dubbed one, say), the
-languages of all of them are listed.
+`<Language>` of their sound, subtitle and closed caption tracks, the spoken
+language of the sound's MCA labels (`RFC5646SpokenLanguage`, where Bv2.1
+CPLs give it) and the `MainSubtitleLanguageList` of SMPTE CPLs (which Bv2.1
+requires). When a folder holds several CPLs (an original version and a
+dubbed one, say), each CPL is read on its own and the languages of all of
+them are listed.
 
 These tags are optional, and many CPLs leave them out. dcpcheck then reads
-the languages from the [ISDCF name](https://isdcf.com/dcnc/) of the DCP
-(the folder name, or else the CPL's title): in `Film_FTR_F_EN-FR_FR-TP_51_2K_…`,
+the languages from the [ISDCF name](https://isdcf.com/dcnc/) of the CPL's
+title, or else of the folder: in `Film_FTR_F_EN-FR_FR-TP_51_2K_…`,
 `EN-FR` means English sound with French subtitles, `XX` means none, a lower
 case subtitle code (`EN-fr`) means burned-in subtitles and `-CCAP` adds
 closed captions. Burned-in subtitles are part of the picture: the CPL cannot

@@ -14,6 +14,7 @@ SMPTE_CPL = """<?xml version="1.0" encoding="UTF-8"?>
   <ContentKind>{kind}</ContentKind>
   <ReelList><Reel><Id>urn:uuid:{id}</Id><AssetList>
     <MainPicture><Id>urn:uuid:{id}</Id><EditRate>24 1</EditRate><IntrinsicDuration>{frames}</IntrinsicDuration><EntryPoint>0</EntryPoint><Duration>{frames}</Duration>{key}<FrameRate>24 1</FrameRate><ScreenAspectRatio>{w} {h}</ScreenAspectRatio></MainPicture>
+    <MainSound><Id>urn:uuid:{id}</Id><EditRate>24 1</EditRate><IntrinsicDuration>{frames}</IntrinsicDuration><Language>fr-FR</Language></MainSound>
     <meta:CompositionMetadataAsset><meta:MainSoundConfiguration>51/L,R,C,LFE,Ls,Rs</meta:MainSoundConfiguration></meta:CompositionMetadataAsset>
   </AssetList></Reel></ReelList>
 </CompositionPlaylist>

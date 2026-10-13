@@ -233,9 +233,11 @@ function detailHtml(d) {
   const f = d.facts || {};
   const facts = [
     ['Type', f.kind], ['Standard', f.standard], ['Picture', f.picture],
-    ['Duration', f.duration], ['Sound', f.sound], ['Size', fmtSize(d.size)],
+    ['Duration', f.duration], ['Sound', f.sound], ['Audio language', f.audio_language],
+    ['Subtitles', f.subtitles], ['Size', fmtSize(d.size)],
     ['KDM', f.kdm == null ? null : f.kdm ? 'Required' : 'Not required']
   ];
+  if (f.captions) facts.splice(7, 0, ['Closed captions', f.captions]);
   if (f.cpls) facts.push(['CPLs', f.cpls]);
   const st = statusOf(d);
   const res = d.result;

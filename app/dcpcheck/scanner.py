@@ -1,8 +1,8 @@
 """Find DCPs under a directory and read a few facts from their CPL.
 
 This is only used to show a summary in the UI (type, standard, picture,
-duration, sound, size, whether a KDM is needed). The actual verification is
-done by DCP-o-matic.
+duration, sound, languages, size, whether a KDM is needed). The actual
+verification is done by DCP-o-matic.
 """
 
 import hashlib
@@ -41,6 +41,17 @@ KINDS = {
     "highlights": "Highlights",
     "event": "Event",
     "clip": "Clip",
+}
+
+# Names for the most common language tags, in CPLs (RFC 5646, "fr-FR") and in
+# ISDCF names ("FR"). Other tags are shown as they are.
+LANGUAGES = {
+    "ar": "Arabic", "ca": "Catalan", "cs": "Czech", "da": "Danish", "de": "German",
+    "el": "Greek", "en": "English", "es": "Spanish", "eu": "Basque", "fa": "Persian",
+    "fi": "Finnish", "fr": "French", "he": "Hebrew", "hi": "Hindi", "hu": "Hungarian",
+    "it": "Italian", "ja": "Japanese", "ko": "Korean", "nb": "Norwegian", "nl": "Dutch",
+    "no": "Norwegian", "pl": "Polish", "pt": "Portuguese", "ro": "Romanian", "ru": "Russian",
+    "sv": "Swedish", "th": "Thai", "tr": "Turkish", "uk": "Ukrainian", "zh": "Chinese",
 }
 
 
@@ -301,6 +312,82 @@ def sound_from_name(name):
     return None
 
 
+def language_label(tag):
+    """'fr-FR' -> 'French (fr-FR)', 'FR' -> 'French (FR)'."""
+    name = LANGUAGES.get(tag.split("-")[0].lower())
+    return f"{name} ({tag})" if name else tag
+
+
+def languages_label(tags):
+    return ", ".join(language_label(t) for t in tags)
+
+
+def cpl_languages(cpls):
+    """The language tags the CPLs give their sound, subtitles and closed
+    captions, in order of appearance. A track listed without a language
+    shows up as an empty list."""
+    found = {}
+
+    def add(kind, tags):
+        seen = found.setdefault(kind, [])
+        seen.extend(t for t in tags if t not in seen)
+
+    for cpl in cpls:
+        reels = child(cpl, "ReelList")
+        for el in reels.iter() if reels is not None else []:
+            kind = {"MainSound": "audio", "MainSubtitle": "subtitles", "MainClosedCaption": "captions"}.get(local(el.tag))
+            if kind:
+                lang = text(el, "Language")
+                add(kind, [lang] if lang else [])
+            elif local(el.tag) == "MainSubtitleLanguageList":  # SMPTE 429-16, required by Bv2.1
+                add("subtitles", (el.text or "").split())
+    return found
+
+
+def languages_from_name(name):
+    """The languages of an ISDCF name: ..._F_FR-EN_FR-TP_... is French sound
+    with English subtitles. XX means none, lower case means burned in and
+    CCAP adds closed captions."""
+    parts = name.split("_")
+    for i, part in enumerate(parts[1:-1], 1):
+        if not re.fullmatch(r"[FSC](-\d{2,3})?", part):
+            continue
+        m = re.fullmatch(r"([A-Za-z]{2,3})((?:-[A-Za-z]{2,3})*?)(-[COco]CAP)?", parts[i + 1])
+        if not m:
+            return None
+        audio, subs = m.group(1), m.group(2).split("-")[1:]
+        out = {"audio": [] if audio.upper() == "XX" else [audio.upper()],
+               "subtitles": [t.upper() for t in subs if t.upper() != "XX"]}
+        out["burned_in"] = any(t.islower() for t in subs)
+        out["captions"] = bool(m.group(3))
+        return out
+    return None
+
+
+def read_languages(cpls, names):
+    """Labels for the sound, subtitle and closed caption languages, from the
+    CPLs or, when they do not say, from the ISDCF name of the DCP."""
+    langs = cpl_languages(cpls)
+    isdcf = next((x for x in map(languages_from_name, filter(None, names)) if x), {})
+    facts = {}
+    for kind, key in (("audio", "audio_language"), ("subtitles", "subtitles"), ("captions", "captions")):
+        tags = langs.get(kind)
+        if tags:
+            facts[key] = languages_label(tags)
+        elif kind == "captions":
+            if tags is not None or isdcf.get("captions"):
+                facts[key] = "Language not given"
+        elif isdcf.get(kind):
+            facts[key] = languages_label(isdcf[kind])
+            if kind == "subtitles" and isdcf["burned_in"]:
+                facts[key] += " · burned in"
+        elif tags is not None:  # listed in the CPL, without a language
+            facts[key] = "Language not given"
+        elif kind in isdcf or (kind == "subtitles" and cpls):
+            facts[key] = "None"
+    return facts
+
+
 def read_facts(path, name):
     cpls = find_cpls(path)
     cpl = cpls[0] if cpls else None
@@ -373,6 +460,7 @@ def read_facts(path, name):
     elif stereo:
         facts["picture"] = "3D"
     facts["sound"] = sound or sound_from_name(name)
+    facts.update(read_languages(cpls, (name, facts.get("title"))))
     facts = {k: v for k, v in facts.items() if v}
     facts["kdm"] = encrypted(cpls)
     return facts

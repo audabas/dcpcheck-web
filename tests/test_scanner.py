@@ -35,8 +35,12 @@ class Scanner(unittest.TestCase):
         by_name = {d.name.split("_")[0]: d.facts for d in scanner.find_dcps(self.tmp.name)}
         self.assertEqual(by_name["LaTraversee"], {
             "standard": "SMPTE", "title": by_name["LaTraversee"]["title"], "kind": "Feature",
-            "frame_rate": "24 fps", "duration": "1h 42m", "picture": "2K Flat · 1998×1080", "sound": "5.1", "kdm": False,
+            "frame_rate": "24 fps", "duration": "1h 42m", "picture": "2K Flat · 1998×1080", "sound": "5.1",
+            "audio_language": "French (fr-FR)", "subtitles": "None", "kdm": False,
         })
+        # Interop sample: no language in its CPL, so they come from its name.
+        self.assertEqual(by_name["LesHautsPlateaux"]["audio_language"], "English (EN)")
+        self.assertEqual(by_name["LesHautsPlateaux"]["subtitles"], "French (FR)")
         self.assertEqual(by_name["LesHautsPlateaux"]["standard"], "Interop")
         self.assertEqual(by_name["LesHautsPlateaux"]["picture"], "2K Scope · 2048×858")
         self.assertEqual(by_name["Festival2026"]["duration"], "45s")
@@ -78,6 +82,34 @@ class Scanner(unittest.TestCase):
             self.assertEqual(size, 10_100_000)
             if os.stat(os.path.join(tmp, "a.mxf")).st_blocks:
                 self.assertEqual(written, 100_000)
+
+    def test_languages_from_the_cpl(self):
+        cpl = ('<CompositionPlaylist xmlns="http://www.smpte-ra.org/schemas/429-7/2006/CPL" '
+               'xmlns:meta="http://www.smpte-ra.org/schemas/429-16/2014/CPL-Metadata" '
+               'xmlns:cc="http://www.smpte-ra.org/schemas/429-12/2008/TT"><ReelList>'
+               '<Reel><AssetList><MainSound><Language>en-US</Language></MainSound>'
+               '<MainSubtitle><Language>fr-FR</Language></MainSubtitle><cc:MainClosedCaption/>'
+               '<meta:CompositionMetadataAsset><meta:MainSubtitleLanguageList>fr-FR de</meta:MainSubtitleLanguageList>'
+               '</meta:CompositionMetadataAsset></AssetList></Reel>'
+               '<Reel><AssetList><MainSound><Language>en-US</Language></MainSound></AssetList></Reel>'
+               '</ReelList></CompositionPlaylist>')
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "cpl.xml"), "w") as f:
+                f.write(cpl)
+            # The CPL wins over the name.
+            facts = scanner.read_facts(tmp, "Film_FTR_F_IT-XX_IT_51_2K")
+        self.assertEqual(facts["audio_language"], "English (en-US)")
+        self.assertEqual(facts["subtitles"], "French (fr-FR), German (de)")
+        self.assertEqual(facts["captions"], "Language not given")
+
+    def test_languages_from_name(self):
+        langs = lambda name: scanner.read_languages([], [name])
+        self.assertEqual(langs("Film_FTR_F_FR-XX_FR-TP_51_2K"), {"audio_language": "French (FR)", "subtitles": "None"})
+        self.assertEqual(langs("Film_FTR_S-239_EN-fr_FR_51_2K")["subtitles"], "French (FR) · burned in")
+        self.assertEqual(langs("Film_FTR_F_EN-FR-DE-CCAP_FR_51_2K"), {
+            "audio_language": "English (EN)", "subtitles": "French (FR), German (DE)", "captions": "Language not given",
+        })
+        self.assertEqual(langs("whatever"), {})
 
     def test_sound_from_name(self):
         self.assertEqual(scanner.sound_from_name("Film_FTR_F_FR-XX_FR_71-HI_2K_X"), "7.1")

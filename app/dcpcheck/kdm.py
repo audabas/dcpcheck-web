@@ -152,18 +152,28 @@ def check(kdm, cpls, now, servers=()):
     """Compare a KDM with the CPLs of a DCP (see scanner.read_cpls), and
     with the servers of KDM_SERVERS when there are any.
 
-    The verdict is the worst of: other (made for another CPL), server (made
+    The verdict is the worst of: other (made for another CPL), vf (made
+    for another CPL that plays encrypted assets of this DCP), server (made
     for a server that is not in the list), keys (some keys of the CPL are
     missing), expired, unknown (no valid dates), not_yet (not valid yet)
     and ok."""
     res = {k: v for k, v in kdm.items() if k != "key_ids"}
     res["keys"] = len(kdm["key_ids"])
     res["server"] = server_of(kdm, servers)
+    have = set(kdm["key_ids"])
     cpl = next((c for c in cpls if c["id"] and c["id"] == kdm["cpl_id"]), None)
     if cpl is None:
-        res["verdict"] = "other"
+        # A VF has a CPL of its own but plays the picture and sound of its
+        # OV, so its KDM carries the keys of the OV's assets. It doesn't
+        # play the OV's CPL, but it is what the server needs to play the VF.
+        shared = {k for c in cpls for k in c["key_ids"] if k in have}
+        if shared:
+            res["verdict"] = "vf"
+            res["shared"] = len(shared)
+            res["validity"] = validity(kdm, now)
+        else:
+            res["verdict"] = "other"
         return res
-    have = set(kdm["key_ids"])
     res["cpl_title"] = cpl["title"]
     res["needed"] = len(cpl["key_ids"])
     res["missing"] = sum(1 for k in cpl["key_ids"] if k not in have)
@@ -171,12 +181,17 @@ def check(kdm, cpls, now, servers=()):
         res["verdict"] = "server"
     elif res["missing"]:
         res["verdict"] = "keys"
-    elif kdm["not_before"] is None or kdm["not_after"] is None:
-        res["verdict"] = "unknown"
-    elif now > kdm["not_after"]:
-        res["verdict"] = "expired"
-    elif now < kdm["not_before"]:
-        res["verdict"] = "not_yet"
     else:
-        res["verdict"] = "ok"
+        res["verdict"] = validity(kdm, now)
     return res
+
+
+def validity(kdm, now):
+    """unknown (no valid dates), expired, not_yet (not valid yet) or ok."""
+    if kdm["not_before"] is None or kdm["not_after"] is None:
+        return "unknown"
+    if now > kdm["not_after"]:
+        return "expired"
+    if now < kdm["not_before"]:
+        return "not_yet"
+    return "ok"

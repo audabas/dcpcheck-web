@@ -254,6 +254,10 @@ each KDM and tells you:
   version of the film. A KDM made for another version, even with the same
   title, won't play this one. If the KDM is for another DCP of your library,
   dcpcheck says which one, and shows the result on that DCP as well;
+- whether it was made for a VF of this DCP: a composition of its own that
+  plays the encrypted picture and sound of this OV, so the KDM carries the
+  keys of the OV's assets. Such a KDM doesn't play the OV's own CPL, but
+  plays the VF once the server has both the OV and the VF;
 - whether it carries the ids of all the keys that the CPL's encrypted
   assets need;
 - when it is valid, and whether it is valid now, expired or not valid yet;
@@ -343,7 +347,7 @@ python3 dev/simulate_copy.py sample-dcps/Films/Arriving_FTR_2K_SMPTE_OV 20MB 30
 
 To try the KDM check, make a ZIP of fake KDMs for the encrypted sample
 DCPs (made for each screen, expired, not valid yet, missing a key, for
-another version), and drop it on the page:
+another version, for a VF), and drop it on the page:
 
 ```sh
 python3 dev/make_sample_kdms.py sample-dcps sample-kdms.zip

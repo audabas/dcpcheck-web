@@ -46,6 +46,7 @@ const KDM_VERDICT = {
   expired: { label: 'Expired', cls: 'error' },
   keys: { label: 'Keys missing', cls: 'error' },
   server: { label: 'Not your server', cls: 'error' },
+  vf: { label: 'For a VF of it', cls: 'warn' },
   other: { label: 'Not for this DCP', cls: 'error' }
 };
 const KDM_ORDER = Object.keys(KDM_VERDICT);
@@ -386,10 +387,17 @@ function kdmCardHtml(d) {
 
   if (k.busy) html += `<div class="running"><span class="running-stage kdm-busy">${ICON_SPIN}Reading ${esc(plural(k.busy, 'file', 'files'))}…</span></div>`;
   if (items.length) {
-    const ok = mine.filter(r => r.verdict === 'ok').length;
+    const own = mine.filter(r => r.verdict !== 'vf');
+    const ok = own.filter(r => r.verdict === 'ok').length;
     let summary;
     if (!mine.length) summary = items.length === 1 ? 'This KDM was not made for this DCP.' : `None of these ${items.length} KDMs was made for this DCP.`;
-    else summary = `${plural(mine.length, 'KDM', 'KDMs')} for this DCP, ${ok} valid now` + (items.length > mine.length ? `, and ${plural(items.length - mine.length, 'KDM', 'KDMs')} for other DCPs.` : '.');
+    else {
+      const parts = [];
+      if (own.length) parts.push(`${plural(own.length, 'KDM', 'KDMs')} for this DCP, ${ok} valid now`);
+      if (mine.length > own.length) parts.push(`${plural(mine.length - own.length, 'KDM', 'KDMs')} for a VF that plays its picture and sound`);
+      if (items.length > mine.length) parts.push(`${plural(items.length - mine.length, 'KDM', 'KDMs')} for other DCPs`);
+      summary = (parts.length > 1 ? parts.slice(0, -1).join(', ') + ', and ' + parts[parts.length - 1] : parts[0]) + '.';
+    }
     html += `<div class="result-head"><span class="eyebrow">Checked KDMs</span><span class="when">${esc(summary)}</span></div>`;
     // KDMs made for other DCPs (a ZIP often holds several films) stay folded.
     const others = items.filter(r => r.verdict === 'other');
@@ -420,7 +428,12 @@ function kdmItemHtml(d, r) {
   else if (r.verdict === 'expired') msg = made + ', but it expired on ' + to + '.';
   else if (r.verdict === 'server') msg = 'Made for this DCP, but for a server that is not one of yours' + (r.recipient ? ': ' + r.recipient : '') + '. Ask for a KDM made for your server’s certificate.';
   else if (r.verdict === 'keys') msg = made + ', but ' + (r.missing === r.needed ? (r.needed === 1 ? 'the key it needs is' : 'all the keys it needs are') : r.missing + ' of the ' + r.needed + ' keys it needs ' + (r.missing === 1 ? 'is' : 'are')) + ' missing: the DCP won’t play.';
-  else if (r.other) msg = 'Made for another DCP of this library:';
+  else if (r.verdict === 'vf') {
+    msg = 'Made for another composition (CPL) that plays this DCP’s encrypted picture and sound, a VF of it most likely' + (r.title ? ': “' + r.title + '”' : '') + '. The server plays that composition, not this DCP’s own one, once it has the VF too.';
+    msg += { not_yet: ' Valid only from ' + from + '.', expired: ' It expired on ' + to + '.', unknown: ' Its dates of validity can’t be read.' }[r.validity] || '';
+    if (ui.state.kdm_servers && ui.state.kdm_servers.length && !r.server) msg += ' It is for a server that is not one of yours' + (r.recipient ? ': ' + r.recipient : '') + '.';
+    if (r.other) msg += ' The VF is in this library:';
+  } else if (r.other) msg = 'Made for another DCP of this library:';
   else msg = 'Made for another composition (CPL), perhaps another version of the film' + (r.title ? ': “' + r.title + '”' : '') + '.';
   let html = `<li>
 <span class="sev ${v.cls}">${esc(v.label)}</span>

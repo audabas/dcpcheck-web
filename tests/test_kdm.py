@@ -85,11 +85,19 @@ class Check(unittest.TestCase):
         self.assertEqual(self.verdict(make()), "ok")
         self.assertEqual(self.verdict(make(), now=NOW - 2 * 86400), "not_yet")
         self.assertEqual(self.verdict(make(), now=NOW + 10 * 86400), "expired")
-        self.assertEqual(self.verdict(make(cpl="8a1b2c3d-0000-4000-8000-0000000000ff")), "other")
+        self.assertEqual(self.verdict(make(cpl="8a1b2c3d-0000-4000-8000-0000000000ff", keys=["8a1b2c3d-0000-4000-8000-0000000000c1"])), "other")
         self.assertEqual(self.verdict(make(keys=KEYS[:1])), "keys")
         self.assertEqual(self.verdict(make(start="tomorrow")), "unknown")
         # Extra keys, for the forensic marking say, are fine.
         self.assertEqual(self.verdict(make(keys=KEYS + ["8a1b2c3d-0000-4000-8000-0000000000b3"])), "ok")
+
+    def test_vf(self):
+        # Another CPL, but with the keys of this one's assets: a VF of it.
+        vf = "8a1b2c3d-0000-4000-8000-0000000000ff"
+        r = kdm.check(kdm.parse(make(cpl=vf, keys=KEYS + ["8a1b2c3d-0000-4000-8000-0000000000c1"])), CPLS, NOW)
+        self.assertEqual((r["verdict"], r["shared"], r["validity"]), ("vf", 2, "ok"))
+        r = kdm.check(kdm.parse(make(cpl=vf, keys=KEYS[1:])), CPLS, NOW + 10 * 86400)
+        self.assertEqual((r["verdict"], r["shared"], r["validity"]), ("vf", 1, "expired"))
 
     def test_details(self):
         r = kdm.check(kdm.parse(make(keys=KEYS[:1])), CPLS, NOW)
@@ -119,7 +127,7 @@ class Servers(unittest.TestCase):
         r = self.check("Salle 3=SM.ws-9")
         self.assertEqual((r["verdict"], r["server"]), ("server", None))
         # The wrong DCP is worse; without servers, no opinion.
-        self.assertEqual(self.check("Salle 3=SM.ws-9", cpl="8a1b2c3d-0000-4000-8000-0000000000ff")["verdict"], "other")
+        self.assertEqual(self.check("Salle 3=SM.ws-9", cpl="8a1b2c3d-0000-4000-8000-0000000000ff", keys=["8a1b2c3d-0000-4000-8000-0000000000c1"])["verdict"], "other")
         self.assertEqual(self.check("")["verdict"], "ok")
 
 
@@ -169,7 +177,7 @@ class Library(unittest.TestCase):
         with open(self.zip, "rb") as f:
             res = self.m.check_kdms(self.dcp("Minuit").id, "kdms.zip", f.read())
         by_file = {r["file"].rsplit("/", 1)[-1]: r for r in res["kdms"]}
-        self.assertEqual(len(by_file), 12)
+        self.assertEqual(len(by_file), 14)
         self.assertEqual(by_file["MinuitAuPort_Salle1.xml"]["verdict"], "ok")
         self.assertEqual(by_file["MinuitAuPort_Salle1.xml"]["recipient"], "SM.salle1.IMB.example.com")
         self.assertEqual(by_file["MinuitAuPort_Salle3_expired.xml"]["verdict"], "expired")
@@ -177,6 +185,8 @@ class Library(unittest.TestCase):
         self.assertEqual(by_file["MinuitAuPort_Salle5_missing_key.xml"]["verdict"], "keys")
         self.assertEqual(by_file["MinuitAuPort_VOST_Salle1.xml"]["verdict"], "other")
         self.assertNotIn("other", by_file["MinuitAuPort_VOST_Salle1.xml"])
+        self.assertEqual(by_file["MinuitAuPort_VF_Salle1.xml"]["verdict"], "vf")
+        self.assertEqual(by_file["MinuitAuPort_VF_Salle1.xml"]["validity"], "ok")
         # A KDM for another DCP of the library says which one.
         other = by_file["LeDernierQuai_Salle1.xml"]
         self.assertEqual(other["verdict"], "other")

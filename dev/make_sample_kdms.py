@@ -2,8 +2,8 @@
 """Make a ZIP of fake KDMs for the encrypted sample DCPs (see
 dev/make_sample_dcps.py), to try the KDM check of the UI: for each DCP, a
 KDM valid now for two screens, an expired one, one not valid yet, one that
-misses a key and one for another version of the film. Plus a file that is
-not a KDM. Their keys are random: only their public part is checked.
+misses a key, one for another version of the film and one for a VF that
+plays its picture and sound. Plus a file that is not a KDM. Their keys are random: only their public part is checked.
 
     python3 dev/make_sample_kdms.py sample-dcps sample-kdms.zip
 """
@@ -82,5 +82,7 @@ with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
             z.writestr(f"{short}/{short}_Salle5_missing_key.xml", kdm(title, cpl_id, [uuid.uuid4()], "Salle 5", now - day, now + 7 * day))
             other = title.replace("_F_FR-XX_", "_F_EN-FR_")
             z.writestr(f"{short}/{short}_VOST_Salle1.xml", kdm(other, uuid.uuid4(), [uuid.uuid4()], "Salle 1", now - day, now + 7 * day))
+            vf = title.replace("_F_FR-XX_", "_F_FR-FR-OCAP_").replace("_OV", "_VF")
+            z.writestr(f"{short}/{short}_VF_Salle1.xml", kdm(vf, uuid.uuid4(), keys + [uuid.uuid4()], "Salle 1", now - day, now + 7 * day))
     z.writestr("README.txt", "Fake KDMs made by dcpcheck's dev/make_sample_kdms.py.\n")
 print("Sample KDMs written to", os.path.abspath(out))

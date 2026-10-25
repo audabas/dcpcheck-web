@@ -338,7 +338,7 @@ class Manager:
                 continue
             res = kdm.check(k, cpls, now, self.cfg.kdm_servers)
             res["file"] = fname
-            if res["verdict"] == "other":
+            if res["verdict"] in ("other", "vf"):
                 if library is None:  # CPL id -> (DCP, its CPLs)
                     library = {}
                     for o in others:

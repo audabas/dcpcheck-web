@@ -154,6 +154,8 @@ class Handler(BaseHTTPRequestHandler):
             dcp_id, action = r.groups()
             if action == "verify" and m.is_copying(dcp_id):
                 return self.send_json({"ok": False, "error": "The DCP is still being copied."}, HTTPStatus.CONFLICT)
+            if action == "verify" and m.is_partial(dcp_id):
+                return self.send_json({"ok": False, "error": "The folder has no ASSETMAP: its copy is not complete."}, HTTPStatus.CONFLICT)
             ok = m.verify(dcp_id) if action == "verify" else m.cancel(dcp_id)
             return self.send_json({"ok": ok}, HTTPStatus.OK if ok else HTTPStatus.NOT_FOUND)
         if r and r.group(2) == "kdm":

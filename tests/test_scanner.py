@@ -31,6 +31,16 @@ class Scanner(unittest.TestCase):
     def test_depth(self):
         self.assertEqual(scanner.find_dcps(self.tmp.name, max_depth=1), [])
 
+    def test_mxf_without_assetmap(self):
+        with tempfile.TemporaryDirectory() as root:
+            for folder, files in {"Arriving": ["j2c_video.mxf"], "Rsync": [".pcm_audio.mxf.Ab12Cd"],
+                                  "Done": ["ASSETMAP.xml", "j2c_video.mxf"], "Other": ["notes.txt"]}.items():
+                os.makedirs(os.path.join(root, folder, "sub"))
+                for n in files:
+                    open(os.path.join(root, folder, n), "w").close()
+            dcps = {d.name: d.partial for d in scanner.find_dcps(root)}
+            self.assertEqual(dcps, {"Arriving": True, "Done": False, "Rsync": True})
+
     def test_facts(self):
         by_name = {d.name.split("_")[0]: d.facts for d in scanner.find_dcps(self.tmp.name)}
         self.assertEqual(by_name["LaTraversee"], {

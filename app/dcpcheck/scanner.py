@@ -64,6 +64,7 @@ class Dcp:
     size: int = 0
     written: int = 0    # bytes actually written, see measure()
     mtime: float = 0.0  # last change to any file in the folder
+    partial: bool = False  # MXF files but no ASSETMAP yet, see find_dcps()
     facts: dict = field(default_factory=dict)
 
 
@@ -75,19 +76,42 @@ def is_dcp(path):
     return any(os.path.isfile(os.path.join(path, n)) for n in ASSETMAP_NAMES)
 
 
+def is_mxf(name):
+    """An MXF file, or one still arriving under a temporary name
+    (j2c.mxf.filepart, .j2c.mxf.Ab12Cd from rsync...)."""
+    name = name.lower()
+    return name.endswith(".mxf") or ".mxf." in name
+
+
+def has_mxf(entries):
+    for e in entries:
+        try:
+            if is_mxf(e.name) and e.is_file(follow_symlinks=True):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 def find_dcps(root, max_depth=3):
-    """Return the DCP folders under root, sorted by name."""
+    """Return the DCP folders under root, sorted by name.
+
+    A folder with MXF files but no ASSETMAP is returned too, as partial:
+    many copies write the ASSETMAP last, or under a temporary name."""
     found = []
 
     def walk(path, depth):
         if is_dcp(path):
-            found.append(path)
-            return
-        if depth >= max_depth:
+            found.append((path, False))
             return
         try:
             entries = sorted(os.scandir(path), key=lambda e: e.name.lower())
         except OSError:
+            return
+        if has_mxf(entries):
+            found.append((path, True))
+            return
+        if depth >= max_depth:
             return
         for e in entries:
             if e.name.startswith(".") or e.name in SKIP_DIRS:
@@ -102,17 +126,17 @@ def find_dcps(root, max_depth=3):
         walk(root, 0)
 
     dcps = []
-    for path in found:
+    for path, partial in found:
         rel = os.path.relpath(path, root)
         if rel == ".":
             rel = os.path.basename(os.path.normpath(root))
-        dcps.append(describe(path, rel))
+        dcps.append(describe(path, rel, partial))
     dcps.sort(key=lambda d: d.name.lower())
     return dcps
 
 
-def describe(path, relpath):
-    d = Dcp(id=dcp_id(relpath), name=os.path.basename(os.path.normpath(path)), relpath=relpath, path=path)
+def describe(path, relpath, partial=False):
+    d = Dcp(id=dcp_id(relpath), name=os.path.basename(os.path.normpath(path)), relpath=relpath, path=path, partial=partial)
     d.size, d.written, d.mtime = measure(path)
     try:
         d.facts = read_facts(path, d.name)

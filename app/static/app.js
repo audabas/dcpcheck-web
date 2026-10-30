@@ -10,14 +10,15 @@ const STATUS = {
   never: { label: 'Never verified' },
   running: { label: 'Running' },
   queued: { label: 'Queued' },
-  copying: { label: 'Copying' }
+  copying: { label: 'Copying' },
+  incomplete: { label: 'Incomplete' }
 };
 // Without errors a DCP is OK; its Bv2.1 issues and warnings only show as flags.
 const PASSED = { ok: 1, bv21: 1, warn: 1 };
 // Statuses that show those flags.
 const FLAGGED = { ok: 1, bv21: 1, warn: 1, minor: 1 };
 // For sorting by status, problems first.
-const STATUS_RANK = ['copying', 'running', 'queued', 'failed', 'error', 'minor', 'never', 'bv21', 'warn', 'ok'];
+const STATUS_RANK = ['copying', 'running', 'queued', 'incomplete', 'failed', 'error', 'minor', 'never', 'bv21', 'warn', 'ok'];
 const SORTS = {
   name: { label: 'Name', order: ['A → Z', 'Z → A'] },
   size: { label: 'Size', order: ['Largest first', 'Smallest first'] },
@@ -123,6 +124,8 @@ function copyPct(d) {
 function statusOf(d) {
   if (d.job) return d.job.state === 'running' ? 'running' : 'queued';
   if (d.copy) return 'copying';
+  // MXF files arrived but no ASSETMAP: a copy that stopped before its end.
+  if (d.partial) return 'incomplete';
   return d.result ? d.result.status : 'never';
 }
 function statusLabel(d) {
@@ -192,6 +195,7 @@ function rowHtml(d) {
   if (running) line = 'Verification in progress';
   else if (st === 'queued') line = 'Waiting for the current verification';
   else if (st === 'copying') line = 'Still arriving on the disk';
+  else if (st === 'incomplete') line = 'No ASSETMAP, updated ' + fmtDate(d.mtime);
   else if (d.result && ui.sort !== 'date') line = 'Verified ' + fmtDate(d.result.finished_at);
   else line = 'Updated ' + fmtDate(d.mtime);
   // A verified folder is re-run from its detail, not from the list.
@@ -200,7 +204,7 @@ function rowHtml(d) {
     side = `<span class="copying" title="Copy in progress: the folder is still growing">${ICON_SPIN}<span class="mono">${esc(fmtSpeed(d.copy.speed))}</span></span>`;
   } else if (busy) {
     side = `<button class="btn btn-sec" type="button" data-key="verify-${esc(d.id)}" disabled>${running ? 'Running' : 'Queued'}</button>`;
-  } else if (!d.result) {
+  } else if (!d.result && st !== 'incomplete') {
     side = `<button class="btn btn-sec" type="button" data-verify="${esc(d.id)}" data-key="verify-${esc(d.id)}" aria-label="${esc('Verify ' + d.name)}">Verify</button>`;
   }
   return `<button class="row-main" type="button" data-select="${esc(d.id)}" data-key="sel-${esc(d.id)}" aria-pressed="${sel}">
@@ -274,8 +278,8 @@ ${f.versions ? versionsHtml(f.versions) : ''}
 <h3>Verification</h3>
 <span class="verif-status">${statusHtml(d)}</span>
 </div><div class="verif-actions">`;
-  if (st === 'copying') {
-    // No action while the DCP is still arriving.
+  if (st === 'copying' || st === 'incomplete') {
+    // No action while the DCP is still arriving, or before its ASSETMAP.
   } else if (d.job) {
     html += `<button class="btn btn-sec" type="button" data-cancel="${esc(d.id)}" data-key="cancel">${queued ? 'Remove from queue' : 'Cancel'}</button>`;
   } else {
@@ -295,7 +299,7 @@ ${f.versions ? versionsHtml(f.versions) : ''}
     const pct = copyPct(d);
     let hint;
     if (pct == null) {
-      hint = `${fmtSize(c.copied)} so far, growing for ${fmtDur(Date.now() / 1000 - ui.clockSkew - c.since)}. The total size will show once the packing list (PKL) has arrived.`;
+      hint = `${d.partial ? 'No ASSETMAP yet. ' : ''}${fmtSize(c.copied)} so far, growing for ${fmtDur(Date.now() / 1000 - ui.clockSkew - c.since)}. The total size will show once the packing list (PKL) has arrived.`;
     } else {
       const left = c.speed > 0 && c.expected > c.copied ? ', ' + fmtLeft((c.expected - c.copied) / c.speed) : '';
       hint = `${fmtSize(c.copied)} of ${fmtSize(c.expected)}${left}.`;
@@ -305,11 +309,13 @@ ${f.versions ? versionsHtml(f.versions) : ''}
 <div class="bar big"${pct != null ? ` role="progressbar" aria-label="Copy progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"` : ''}><span class="bar-live bar-copy" style="width:${pct != null ? pct : 100}%"></span></div>
 <span class="hint">${esc(hint)} ${ui.state.auto_verify ? 'The verification will start by itself once the copy is complete.' : 'The verification can start once the folder stops growing.'}</span>
 </div>`;
+  } else if (st === 'incomplete') {
+    html += `<div class="running"><span class="running-stage">This folder has MXF files but no ASSETMAP</span><span class="hint">Its copy stopped before the end, or is still writing the ASSETMAP under a temporary name. It can be verified once the ASSETMAP is there.</span></div>`;
   } else if (queued) {
     html += `<div class="running"><span class="running-stage">Waiting in the queue${d.queue_position ? ' (position ' + d.queue_position + ')' : ''}.</span><span class="hint">Verifications run one after the other so that they don't fight over the disks.</span></div>`;
   }
 
-  if (!res && !d.job && st !== 'copying') {
+  if (!res && !d.job && st !== 'copying' && st !== 'incomplete') {
     html += `<div class="never">${ICON_NEVER}<b>This folder has never been verified</b><span>Run a verification to check the DCP’s structure, its file hashes and its compliance with the Bv2.1 recommendations.</span></div>`;
   }
 

@@ -143,6 +143,69 @@ class Copies(unittest.TestCase):
         self.assertEqual(m.copies, {})
 
 
+class Partial(unittest.TestCase):
+    """Folders with MXF files whose ASSETMAP has not arrived yet."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = os.path.join(self.tmp.name, "dcp")
+        self.dcp = os.path.join(self.root, "Film_FTR_2K_SMPTE_OV")
+        os.makedirs(self.dcp)
+        self.mxf = os.path.join(self.dcp, "j2c_video.mxf")
+        with open(self.mxf, "wb") as f:
+            f.write(b"\0" * 1000)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def manager(self, quiet):
+        m = Manager(config(self.root, os.path.join(self.tmp.name, "data"), quiet))
+        m.rescan()
+        return m
+
+    def write(self, name, content):
+        with open(os.path.join(self.dcp, name), "w") as f:
+            f.write(content)
+
+    def test_old_mxf_files_are_not_listed(self):
+        time.sleep(0.2)
+        self.assertEqual(self.manager(quiet=0.1).dcps, {})
+
+    def test_arriving_folder_is_verified_once_its_assetmap_is_there(self):
+        m = self.manager(quiet=0.3)
+        (d,) = m.dcps.values()
+        self.assertTrue(d.partial)
+        self.assertIn(d.id, m.copies)
+        self.assertTrue(m.state()["dcps"][0]["partial"])
+        self.write("pkl.xml", '<PackingList><AssetList><Asset><Id>a</Id><Size>1000</Size></Asset></AssetList></PackingList>')
+        self.write("ASSETMAP.xml", "<AssetMap/>")
+        m.remeasure(d)
+        self.assertFalse(d.partial)
+        time.sleep(0.4)
+        m.remeasure(d)
+        self.assertEqual(m.jobs[d.id].auto, "copy")
+
+    def test_copy_stopped_before_its_assetmap(self):
+        m = self.manager(quiet=0.2)
+        (d,) = m.dcps.values()
+        self.write("pkl.xml", '<PackingList><AssetList><Asset><Id>a</Id><Size>1000</Size></Asset></AssetList></PackingList>')
+        m.remeasure(d)
+        time.sleep(0.3)
+        m.remeasure(d)
+        self.assertNotIn(d.id, m.copies)
+        self.assertEqual(m.jobs, {})
+        self.assertFalse(m.verify(d.id))
+        m.rescan()  # still listed, as incomplete
+        (d,) = m.dcps.values()
+        self.assertTrue(d.partial)
+        self.assertNotIn(d.id, m.copies)
+
+        self.write("ASSETMAP.xml", "<AssetMap/>")
+        m.rescan()
+        (d,) = m.dcps.values()
+        self.assertFalse(d.partial)
+        self.assertIn(d.id, m.copies)
+
 
 class NewDcps(unittest.TestCase):
     def setUp(self):

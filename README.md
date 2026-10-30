@@ -50,7 +50,8 @@ it and shows what it says. If this project is useful to you, consider
   in a queue), with live progress and a Cancel button.
 - Notices DCPs that are still being copied to the disk: while a folder keeps
   growing, it shows the copy's progress and speed instead of the Verify
-  button, then verifies the DCP by itself once the copy is complete.
+  button, then verifies the DCP by itself once the copy is complete. A copy
+  shows as soon as its first MXF file arrives, even before its ASSETMAP.
 - Verifies new DCPs by itself as soon as a scan finds them.
 - Marks a DCP without errors as **OK**, with small flags for its Bv2.1
   issues and warnings.
@@ -212,6 +213,15 @@ half-way, or a folder whose files only got new dates (after a change of
 permissions, say), is left alone. A new DCP only appears at the next scan:
 press *Rescan directory* to see it at once.
 
+Many copies write the ASSETMAP last, or under a temporary name until it is
+complete (`ASSETMAP.xml.filepart`, `.ASSETMAP.xml.Ab12Cd` with rsync...). So
+a folder with MXF files but no ASSETMAP is listed too, once a scan finds it
+being written to (MXF files under a temporary name count). It shows as
+*Copying* while it grows, then as *Incomplete* if the copy stops before its
+ASSETMAP arrives, and can't be verified until it does. Such a folder that
+nobody is writing to when dcpcheck starts is not listed: MXF files alone are
+no DCP.
+
 A DCP that a scan finds for the first time is verified by itself too (or
 when its copy is complete, if it is still arriving). The DCPs already there
 when dcpcheck first starts are not: verify them by hand. dcpcheck keeps the
@@ -338,8 +348,8 @@ DCP_ROOT=../sample-dcps DATA_DIR=../data VERIFIER=../dev/fake_verify_cli.py \
 ```
 
 To see how a copy in progress looks, make a fake DCP grow at 20 MB/s for 30
-seconds (the bytes are real; add `--presize` to copy like Windows), then
-rescan:
+seconds (the bytes are real; add `--presize` to copy like Windows, or
+`--assetmap-last` to write the ASSETMAP at the end), then rescan:
 
 ```sh
 python3 dev/simulate_copy.py sample-dcps/Films/Arriving_FTR_2K_SMPTE_OV 20MB 30

@@ -146,6 +146,9 @@ class Manager:
             now = time.time()
             with self.lock:
                 old = self.dcps
+                # MXF files without an ASSETMAP are no DCP: such a folder is
+                # only listed once seen arriving, and then until it goes away.
+                found = [d for d in found if not d.partial or d.id in old or d.mtime > started - self.cfg.copy_quiet]
                 self.dcps = {d.id: d for d in found}
                 for d in found:
                     prev = old.get(d.id)
@@ -204,6 +207,11 @@ class Manager:
         with self.lock:
             return dcp_id in self.copies
 
+    def is_partial(self, dcp_id):
+        with self.lock:
+            d = self.dcps.get(dcp_id)
+            return d is not None and d.partial
+
     def watch_copies(self):
         """Measure the folders being copied every few seconds until they stop changing."""
         while True:
@@ -218,6 +226,7 @@ class Manager:
 
     def remeasure(self, d):
         size, written, mtime = scanner.measure(d.path)
+        partial = not scanner.is_dcp(d.path)
         with self.lock:
             c = self.copies.get(d.id)
             need_expected = c is not None and c.expected is None
@@ -229,14 +238,14 @@ class Manager:
                 return
             changed = (size, written, mtime) != measures(d)
             grew = written > d.written
-            d.size, d.written, d.mtime = size, written, mtime
+            d.size, d.written, d.mtime, d.partial = size, written, mtime, partial
             c.expected = c.expected or expected
             self.track(d, now, changed, grew)
             if now - c.last_change < self.cfg.copy_quiet:
                 return
             # Only verify what we saw arriving in full: not a folder whose dates
-            # merely changed, nor a copy that stopped half-way.
-            auto = self.cfg.auto_verify and c.grew and c.complete()
+            # merely changed, nor a copy that stopped half-way or before its ASSETMAP.
+            auto = self.cfg.auto_verify and c.grew and c.complete() and not partial
         # The copy is over. Its CPL may have arrived after the scan read the facts.
         try:
             facts = scanner.read_facts(d.path, d.name)
@@ -275,6 +284,7 @@ class Manager:
             "relpath": d.relpath,
             "size": d.size,
             "mtime": d.mtime,
+            "partial": d.partial,
             "facts": d.facts,
             "job": job.public() if job else None,
             "copy": copy.public() if copy else None,
@@ -361,7 +371,7 @@ class Manager:
     def verify(self, dcp_id, auto=False):
         with self.lock:
             d = self.dcps.get(dcp_id)
-            if d is None or dcp_id in self.copies:
+            if d is None or d.partial or dcp_id in self.copies:
                 return False
             if dcp_id not in self.jobs:
                 self.jobs[dcp_id] = Job(d, auto)

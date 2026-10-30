@@ -199,7 +199,7 @@ main { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px; }
 .c-warn { color: var(--warn); }
 .c-bv21 { color: var(--bv21); }
 .c-error, .c-failed { color: var(--error); }
-.c-minor { color: var(--minor); }
+.c-minor, .c-incomplete { color: var(--minor); }
 .c-never { color: var(--muted); }
 .c-running, .c-queued { color: var(--run); }
 .c-copying { color: var(--copy); }

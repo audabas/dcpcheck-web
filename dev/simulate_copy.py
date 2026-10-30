@@ -8,14 +8,17 @@ see how dcpcheck shows a copy in progress.
 The last two arguments are the speed per second and the duration in seconds.
 The bytes written are real, so keep both small. With --presize, the MXF file
 gets its final size first and is filled afterwards, as Windows does over SMB.
+With --assetmap-last, the ASSETMAP is only written once the MXF file is.
 """
 import os
 import sys
 import time
 import uuid
 
-args = [a for a in sys.argv[1:] if a != "--presize"]
-presize = len(args) < len(sys.argv) - 1
+flags = {"--presize", "--assetmap-last"}
+args = [a for a in sys.argv[1:] if a not in flags]
+presize = "--presize" in sys.argv
+assetmap_last = "--assetmap-last" in sys.argv
 dest = args[0]
 speed = args[1] if len(args) > 1 else "20MB"
 seconds = float(args[2]) if len(args) > 2 else 30
@@ -25,9 +28,15 @@ step = 0.25
 chunk = b"\1" * int(rate * step)
 total = len(chunk) * int(seconds / step)
 
+
+def write_assetmap():
+    with open(os.path.join(dest, "ASSETMAP.xml"), "w") as f:
+        f.write("<AssetMap/>")
+
+
 os.makedirs(dest, exist_ok=True)
-with open(os.path.join(dest, "ASSETMAP.xml"), "w") as f:
-    f.write("<AssetMap/>")
+if not assetmap_last:
+    write_assetmap()
 with open(os.path.join(dest, "pkl.xml"), "w") as f:
     f.write(f"""<?xml version="1.0" encoding="UTF-8"?>
 <PackingList xmlns="http://www.smpte-ra.org/schemas/429-8/2007/PKL">
@@ -43,4 +52,6 @@ with open(mxf, "wb") as f:
         f.write(chunk)
         f.flush()
         time.sleep(step)
+if assetmap_last:
+    write_assetmap()
 print("Copy finished:", os.path.abspath(dest))

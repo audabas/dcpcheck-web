@@ -206,6 +206,34 @@ class Partial(unittest.TestCase):
         self.assertFalse(d.partial)
         self.assertIn(d.id, m.copies)
 
+    def test_stopped_copy_is_still_listed_after_a_restart(self):
+        m = self.manager(quiet=0.1)
+        (d,) = m.dcps.values()
+        self.assertTrue(d.partial)
+        time.sleep(0.2)
+        m = self.manager(quiet=0.1)  # same data directory, files now old
+        (d,) = m.dcps.values()
+        self.assertTrue(d.partial)
+        self.assertNotIn(d.id, m.copies)
+
+    def test_copy_between_two_scans_is_listed(self):
+        time.sleep(0.2)
+        m = self.manager(quiet=0.1)
+        self.assertEqual(m.dcps, {})
+        with open(self.mxf, "ab") as f:
+            f.write(b"\0" * 1000)
+        time.sleep(0.2)  # the copy stopped before the next scan
+        m.rescan()
+        (d,) = m.dcps.values()
+        self.assertTrue(d.partial)
+        self.assertNotIn(d.id, m.copies)
+
+    def test_old_folder_with_a_pkl_is_listed(self):
+        self.write("pkl.xml", '<PackingList><AssetList/></PackingList>')
+        time.sleep(0.2)
+        (d,) = self.manager(quiet=0.1).dcps.values()
+        self.assertTrue(d.partial)
+
 
 class NewDcps(unittest.TestCase):
     def setUp(self):

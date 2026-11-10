@@ -93,6 +93,11 @@ def has_mxf(entries):
     return False
 
 
+def has_dcp_xml(path):
+    """True if the folder holds a packing list (PKL) or a CPL."""
+    return bool(find_xml(path, "PackingList") or find_xml(path, "CompositionPlaylist"))
+
+
 def find_dcps(root, max_depth=3):
     """Return the DCP folders under root, sorted by name.
 

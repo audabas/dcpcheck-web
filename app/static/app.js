@@ -58,6 +58,7 @@ const ui = {
   filter: 'all',
   showAll: false,
   showFolded: false, // Bv2.1 issues and warnings unfolded in the "All" view
+  showNotes: false,  // the notes of the selected DCP were asked for: they can be long to load
   sort: SORTS[load('sort')] ? load('sort') : 'name',
   reverse: load('reverse') === '1',
   detail: null,      // full detail (with notes) of the selected DCP
@@ -351,7 +352,9 @@ function resultHtml(d, res) {
   html += `<div class="links">${res.report ? `<a class="btn btn-sec btn-link" href="/api/dcp/${esc(d.id)}/report" target="_blank" rel="noopener">Full HTML report</a>` : ''}<a class="btn btn-sec btn-link" href="/api/dcp/${esc(d.id)}/log" target="_blank" rel="noopener">Raw output</a></div>`;
 
   const total = (c.error || 0) + (c.minor || 0) + (c.bv21 || 0) + (c.warn || 0);
-  if (res.status !== 'failed' && total > 0) {
+  if (res.status !== 'failed' && total > 0 && !ui.showNotes) {
+    html += `<div class="more"><button class="btn btn-sec btn-link" type="button" data-shownotes="1" data-key="shownotes">Show the ${esc(plural(total, 'note', 'notes'))}</button></div>`;
+  } else if (res.status !== 'failed' && total > 0) {
     const chips = [['all', 'All', total], ['error', 'Critical', c.error], ['minor', 'Minor', c.minor], ['bv21', 'Bv2.1', c.bv21], ['warn', 'Warnings', c.warn]]
       .filter(([k, , n]) => k === 'all' || n > 0);
     if (!chips.some(([k]) => k === ui.filter)) ui.filter = 'all';
@@ -581,7 +584,7 @@ function render() {
   renderRows(s);
   const sel = s.dcps.find(d => d.id === ui.selected);
   setHtml(document.getElementById('detail'), sel ? detailHtml(sel) : '');
-  if (sel) ensureDetail(sel);
+  if (sel && ui.showNotes) ensureDetail(sel);
 }
 
 async function ensureDetail(d) {
@@ -623,7 +626,7 @@ document.addEventListener('click', async ev => {
     await api('/api/rescan', 'POST').catch(() => {});
     setTimeout(refresh, 300);
   } else if (t.dataset.select) {
-    if (ui.selected !== t.dataset.select) { ui.filter = 'all'; ui.showAll = false; ui.showFolded = false; ui.showOtherKdms = false; }
+    if (ui.selected !== t.dataset.select) { ui.filter = 'all'; ui.showAll = false; ui.showFolded = false; ui.showNotes = false; ui.showOtherKdms = false; }
     ui.selected = t.dataset.select;
     save('selected', ui.selected);
     render();
@@ -638,6 +641,7 @@ document.addEventListener('click', async ev => {
     ui.filter = 'all';
     ui.showAll = false;
     ui.showFolded = false;
+    ui.showNotes = false;
     t.disabled = true;
     await api('/api/dcp/' + encodeURIComponent(t.dataset.verify) + '/verify', 'POST').catch(() => {});
     refresh();
@@ -651,6 +655,9 @@ document.addEventListener('click', async ev => {
     render();
   } else if (t.dataset.fold) {
     ui.showFolded = !ui.showFolded;
+    render();
+  } else if (t.dataset.shownotes) {
+    ui.showNotes = true;
     render();
   } else if (t.dataset.showall) {
     ui.showAll = true;

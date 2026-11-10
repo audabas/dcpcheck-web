@@ -216,11 +216,14 @@ press *Rescan directory* to see it at once.
 Many copies write the ASSETMAP last, or under a temporary name until it is
 complete (`ASSETMAP.xml.filepart`, `.ASSETMAP.xml.Ab12Cd` with rsync...). So
 a folder with MXF files but no ASSETMAP is listed too, once a scan finds it
-being written to (MXF files under a temporary name count). It shows as
-*Copying* while it grows, then as *Incomplete* if the copy stops before its
-ASSETMAP arrives, and can't be verified until it does. Such a folder that
-nobody is writing to when dcpcheck starts is not listed: MXF files alone are
-no DCP.
+being written to, or written to since the previous scan (MXF files under a
+temporary name count). It shows as *Copying* while it grows, then as
+*Incomplete* if the copy stops before its ASSETMAP arrives, and can't be
+verified until it does. An incomplete copy stays listed until its folder goes
+away, after a restart of dcpcheck too (it is kept in `/data/known.json`).
+A folder with MXF files and a PKL or a CPL, but no ASSETMAP, is always listed
+as incomplete. Other MXF files that nobody was seen writing to are not
+listed: MXF files alone are no DCP.
 
 A DCP that a scan finds for the first time is verified by itself too (or
 when its copy is complete, if it is still arriving). The DCPs already there

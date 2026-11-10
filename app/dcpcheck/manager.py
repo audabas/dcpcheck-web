@@ -143,12 +143,15 @@ class Manager:
         try:
             started = time.time()
             found = scanner.find_dcps(self.cfg.dcp_root, self.cfg.scan_depth)
+            # A PKL or a CPL tells a DCP whose ASSETMAP is missing from other MXF files.
+            dcp_xml = {d.id for d in found if d.partial and scanner.has_dcp_xml(d.path)}
             now = time.time()
             with self.lock:
                 old = self.dcps
-                # MXF files without an ASSETMAP are no DCP: such a folder is
-                # only listed once seen arriving, and then until it goes away.
-                found = [d for d in found if not d.partial or d.id in old or d.mtime > started - self.cfg.copy_quiet]
+                # Written to since the previous scan: a copy may have started
+                # and stopped between two scans.
+                since = min(self.scanned_at or started, started) - self.cfg.copy_quiet
+                found = [d for d in found if self.listed(d, old, since, dcp_xml)]
                 self.dcps = {d.id: d for d in found}
                 for d in found:
                     prev = old.get(d.id)
@@ -170,6 +173,15 @@ class Manager:
         finally:
             with self.lock:
                 self.scanning = False
+
+    def listed(self, d, old, since, dcp_xml):
+        """MXF files without an ASSETMAP are no DCP: such a folder is listed
+        once seen arriving, and from then on until it goes away, restarts
+        included (it is remembered with the known DCPs). One that holds a PKL
+        or a CPL is listed in any case."""
+        if not d.partial or d.id in old or d.id in dcp_xml or d.mtime > since:
+            return True
+        return self.known is not None and d.relpath in self.known
 
     def note_known(self, found):
         """Remember the DCPs found; return the ones never seen before.
